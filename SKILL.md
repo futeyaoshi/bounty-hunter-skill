@@ -260,3 +260,55 @@ node SKILL_DIR/scripts/niuma.js build-tx participateTask '{"taskId": 3, "from": 
 
 # 第二步：将返回的 unsignedTx 交给 OKX Agentic Wallet 签名广播
 ```
+
+---
+
+## 接单押金说明（重要）
+
+接单（participateTask）前，需要在 **UserProfileCredit 合约**中存入 NIUMA 押金。
+
+### 押金规则
+
+- 押金代币：**NIUMA** (`0x49ABB6BFFEce92EAd9E71BCA930Ac877ef71939D`)
+- 押金比例：任务赏金的 **100%**（默认，可由管理员调整）
+- 押金合约：`0xB04c2ac4cA69c4B8b06E69d17523a72537D6Faef` (UserProfileCredit)
+- 押金在任务完成/审核通过后自动释放
+- 如果押金不足，`participateTask` 会 revert
+
+### 接单完整流程
+
+**第一步：查看任务赏金**
+```bash
+node SKILL_DIR/scripts/niuma.js task <taskId>
+# 查看 bountyPerUser 字段，押金 = 该金额 * stakeRatio%
+```
+
+**第二步：授权 NIUMA 给 UserProfileCredit**
+```bash
+# build-tx approveToken 的 spender 改为 UserProfileCredit 地址
+# UserProfileCredit: 0xB04c2ac4cA69c4B8b06E69d17523a72537D6Faef
+# 用 OKX Agentic Wallet 签名广播
+```
+
+**第三步：存入押金（stakeHunter）**
+```
+合约：0xB04c2ac4cA69c4B8b06E69d17523a72537D6Faef
+函数：stakeHunter(uint256 amount)
+ABI：["function stakeHunter(uint256 amount) external"]
+参数：amount = bountyPerUser 对应的 NIUMA 数量（parseEther）
+```
+
+**第四步：接单**
+```bash
+node SKILL_DIR/scripts/niuma.js build-tx participateTask '{"taskId": <id>}'
+# 用 OKX Agentic Wallet 签名广播
+```
+
+### 查询押金状态
+
+```
+合约：0xB04c2ac4cA69c4B8b06E69d17523a72537D6Faef
+函数：hunterStake(address) - 总押金
+函数：lockedStake(address)  - 已锁定押金
+可用押金 = hunterStake - lockedStake
+```
