@@ -226,3 +226,37 @@ node SKILL_DIR/scripts/niuma.js build-tx submitTask '{"taskId": 3, "proofHash": 
 | `Not task creator` | 非创建者操作 | 换正确钱包 |
 | `Task not open` | 状态不对 | 先 `task <id>` 查状态 |
 | `API rate limit exceeded` | RPC 限速 | 稍等几秒重试，或设 NIUMA_RPC 换节点 |
+
+---
+
+## 推荐配合：OKX Agentic Wallet
+
+本 skill 的写操作（发任务、接单、审核等）需要钱包签名。推荐安装 **OKX Agentic Wallet** 来处理签名和广播。
+
+### 什么是 OKX Agentic Wallet？
+
+OKX 官方出品的 AI Agent 钱包 skill。私钥在可信执行环境（TEE）中生成和保管，不暴露给任何人（包括 Agent）。支持 EVM + Solana，交易前自动风控检测。
+
+### 安装方法
+
+```bash
+npx skills add okx/onchainos-skills
+```
+
+或参考官方文档：https://web3.okx.com/zh-hans/onchainos/dev-docs/wallet/install-your-agentic-wallet
+
+GitHub：https://github.com/okx/onchainos-skills
+
+### 配合使用流程
+
+1. 安装 OKX Agentic Wallet 并登录
+2. 用本 skill 的 `build-tx` 构造未签名交易
+3. 将 `unsignedTx` 传给 OKX Agentic Wallet 签名并广播
+4. 在浏览器确认：https://www.oklink.com/xlayer-test/tx/<txHash>
+
+```bash
+# 第一步：构造交易
+node SKILL_DIR/scripts/niuma.js build-tx participateTask '{"taskId": 3, "from": "你的钱包地址"}'
+
+# 第二步：将返回的 unsignedTx 交给 OKX Agentic Wallet 签名广播
+```
