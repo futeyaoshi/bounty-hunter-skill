@@ -25,6 +25,46 @@ cd SKILL_DIR && npm install
 - 浏览器: https://www.oklink.com/xlayer-test
 - 关键合约字段：`core`, `bidding`, `queryHelper`, `niumaToken`, `userProfileCredit`, `tokenManager`, `categoryManager`, `referralSystem`, `registry`
 
+## 查询参考信息（发任务前必看）
+
+### 查询可用分类（categoryId）
+
+```bash
+node SKILL_DIR/scripts/niuma.js list 0 1
+# 返回的任务中含 categoryId 字段，可参考现有任务使用的分类
+```
+
+或直接链上查询：
+```
+合约：contracts.json → categoryManager
+ABI：[
+  "function categoryCount() view returns (uint256)",
+  "function categories(uint256) view returns (uint256 id, string name, bool enabled, uint256 createdAt)",
+  "function getCategoryLimits(uint256) view returns (uint256 activeTasks, uint256 maxActiveTasks, uint256 maxParticipants, uint256 minBounty, bool enabled)"
+]
+用法：categoryCount() 查总数，categories(i) 查第 i 个分类名称和状态
+```
+
+当前已知分类（以链上为准）：
+- categoryId: `1` — 推特（enabled, maxParticipants: 100）
+
+### 查询代币限额（minAmount / maxAmount）
+
+```
+合约：contracts.json → tokenManager
+ABI：[
+  "function getTokenInfo(address) view returns (tuple(address tokenAddress, string symbol, uint8 decimals, uint256 baseFee, uint256 communityFeePercentage, uint256 developerFeePercentage, uint256 referralFeePercentage, uint256 minAmount, uint256 maxAmount, bool enabled, uint256 sortOrder, uint256 niumaRate))"
+]
+getTokenInfo(niumaToken) → 查看 minAmount / maxAmount
+```
+
+当前 NIUMA 限额（以链上为准）：
+- 最低：`100 NIUMA`
+- 最高：`10,000,000 NIUMA`
+- 手续费约 13%（communityFee + developerFee + referralReward）
+
+---
+
 ## Task 状态
 
 | 值 | 状态 | 含义 |
