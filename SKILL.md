@@ -4,6 +4,8 @@ Niuma Bounty Platform skill — 操作 task.niuma.works 链上赏金任务平台
 
 支持：查询任务、发布任务、接单、提交工作、审核、招标竞价、余额查询、构建未签名交易。
 
+> 所有合约地址从 `SKILL_DIR/references/contracts.json` 读取，不硬编码。
+
 ## 环境要求
 
 - Node.js >= 18
@@ -15,21 +17,13 @@ Niuma Bounty Platform skill — 操作 task.niuma.works 链上赏金任务平台
 cd SKILL_DIR && npm install
 ```
 
-## 网络 & 合约地址
+## 网络配置
 
-| 参数 | 值 |
-|------|----|
-| 链 | XLayer 测试网 |
-| Chain ID | 1952 |
-| RPC | https://xlayertestrpc.okx.com |
-| 浏览器 | https://www.oklink.com/xlayer-test |
-| Core | `0x3E7765a23AEE412bfc36760Ec8Abb495fb5c6370` |
-| Bidding | `0xC917e6426608E1A7d0267b9346C9c70F97Cdb65B` |
-| QueryHelper | `0x45f390AC7459ab31a23f14513dEbE9a59Dc06826` |
-| NIUMA Token | `0x49ABB6BFFEce92EAd9E71BCA930Ac877ef71939D` |
-| Registry | `0x5d48C3c8F2D8854d444C9E94e09696c28748cfe8` |
-
-完整地址见 `references/contracts.json`。
+见 `SKILL_DIR/references/contracts.json`：
+- 链：XLayer 测试网，Chain ID: 1952
+- RPC: https://xlayertestrpc.okx.com
+- 浏览器: https://www.oklink.com/xlayer-test
+- 关键合约字段：`core`, `bidding`, `queryHelper`, `niumaToken`, `userProfileCredit`, `tokenManager`, `categoryManager`, `referralSystem`, `registry`
 
 ## Task 状态
 
@@ -98,140 +92,108 @@ node SKILL_DIR/scripts/niuma.js balance <address> <tokenAddress>      # ERC20
 export NIUMA_WALLET_SECRET=0x你的私钥
 ```
 
-#### 发布任务
+#### 发布任务（createTask）
+
+⚠️ **注意事项：**
+- `bountyPerUser` 最低 100 NIUMA（TokenManager 限制），最高 10,000,000 NIUMA
+- `startTime` / `endTime` 必须用**链上 block.timestamp**，不是本地时间（两者通常相差 <2 秒，但建议 startTime 至少比当前链上时间晚 60 秒）
+- `startTime` 最多不超过当前时间 +30 天，任务时长最长 30 天
+- 创建任务会自动扣除 bounty 总额 + 平台手续费（约 13% 当前配置）
+- gasLimit 建议 950000（实测约 825888）
+- `categoryId` 从链上查询（当前分类见平台）
+
 ```bash
 node SKILL_DIR/scripts/niuma.js create '<json>'
 ```
+
 JSON 字段：
 ```json
 {
-  "title": "任务标题",
-  "description": "任务描述",
+  "title": "任务标题（最长100字符）",
+  "description": "任务描述（最长300字符）",
   "requirements": "完成要求",
   "taskType": 0,
   "bountyPerUser": "100",
   "maxParticipants": 5,
   "startTime": 1711900800,
   "endTime": 1712505600,
-  "tokenAddress": "0x49ABB6BFFEce92EAd9E71BCA930Ac877ef71939D",
+  "tokenAddress": "<从contracts.json读取niumaToken>",
   "categoryId": 1
 }
 ```
-- `taskType`: 0=普通，1=招标
-- `tokenAddress`: ERC20 地址；OKB 原生填 `"0x0000000000000000000000000000000000000000"` 或不填
-- 脚本自动检查 ERC20 allowance，不足时先 approve
 
-#### 接单（普通任务）
-```bash
-node SKILL_DIR/scripts/niuma.js join <taskId>
-# 别名: participate
-```
+#### 构建未签名交易（build-tx）
 
-#### 提交工作
-```bash
-node SKILL_DIR/scripts/niuma.js submit <taskId> <proofHash> [metadata]
-# proofHash: 工作证明链接或 IPFS hash
-# metadata: 附加说明（可选）
-```
-
-#### 审核通过
-```bash
-node SKILL_DIR/scripts/niuma.js approve <taskId> <participantAddress>
-```
-
-#### 批量审核通过
-```bash
-node SKILL_DIR/scripts/niuma.js batch-approve <taskId> '["0xaddr1","0xaddr2"]'
-```
-
-#### 审核拒绝
-```bash
-node SKILL_DIR/scripts/niuma.js reject <taskId> <participantAddress> "拒绝原因"
-```
-
-#### 取消任务
-```bash
-node SKILL_DIR/scripts/niuma.js cancel <taskId>
-```
-
-#### 招标：提交竞价
-```bash
-node SKILL_DIR/scripts/niuma.js submit-bid <taskId> <bidAmount> "<proposal>" [contactInfo]
-# bidAmount 单位 ether
-```
-
-#### 招标：取消竞价
-```bash
-node SKILL_DIR/scripts/niuma.js cancel-bid <taskId>
-```
-
-#### 招标：选择中标者
-```bash
-node SKILL_DIR/scripts/niuma.js select-bidder <taskId> <bidderAddress>
-```
-
-#### 手动授权 ERC20
-```bash
-node SKILL_DIR/scripts/niuma.js approve-token <tokenAddress> <amount>
-```
-
----
-
-### 构建未签名交易（配合外部钱包 skill）
+适合配合 OKX Agentic Wallet 等外部钱包签名：
 
 ```bash
-node SKILL_DIR/scripts/niuma.js build-tx <command> '<json args>'
+node SKILL_DIR/scripts/niuma.js build-tx <action> '<json>'
 ```
 
-支持命令：
-- `createTask` — 发布任务
+支持的 action：
 - `participateTask` — 接单
-- `submitTask` — 提交工作
+- `submitWork` — 提交工作
 - `approveSubmission` — 审核通过
 - `rejectSubmission` — 审核拒绝
-- `cancelTask` — 取消任务
-- `submitBid` — 提交竞价
-- `selectBidder` — 选标
-- `approveToken` — ERC20 授权
+- `cancelParticipation` — 取消接单
+- `placeBid` — 竞价
 
-示例：
-```bash
-# 构建接单交易（给外部钱包签名）
-node SKILL_DIR/scripts/niuma.js build-tx participateTask '{"taskId": 3, "from": "0x你的地址"}'
+---
 
-# 构建提交工作交易
-node SKILL_DIR/scripts/niuma.js build-tx submitTask '{"taskId": 3, "proofHash": "https://github.com/xxx/pr/1", "metadata": ""}'
+## 接单押金说明（重要）
+
+接单（participateTask）前，需要先在 **UserProfileCredit 合约**中存入 NIUMA 押金。
+合约地址从 `contracts.json` 中的 `userProfileCredit` 字段读取。
+
+### 押金规则
+
+- 押金代币：**NIUMA**（地址见 `contracts.json` → `niumaToken`）
+- 押金比例：任务赏金的 **100%**（默认，管理员可调整）
+- 押金在任务完成/审核通过后自动释放
+- 如果可用押金不足，`participateTask` 会 revert
+
+### 查询押金状态
+
+```
+ABI：[
+  "function hunterStake(address) view returns (uint256)",
+  "function lockedStake(address) view returns (uint256)",
+  "function calculateNiumaStake(address token, uint256 amount) view returns (uint256)"
+]
+可用押金 = hunterStake(address) - lockedStake(address)
 ```
 
-返回：`{unsignedTx: {to, data, chainId, gasPrice, nonce}}`
+### 充值押金（stakeHunter）
 
----
+⚠️ 先 approve NIUMA 给 UserProfileCredit 合约，再存入。
 
-## 与钱包 Skill 协作流程
+```
+ABI：["function stakeHunter(uint256 amount) external"]
+步骤：
+1. approve NIUMA → userProfileCredit 合约
+2. stakeHunter(amount)
+```
 
-1. `build-tx` 构造 `unsignedTx`
-2. 传给钱包 skill 签名
-3. 钱包 skill 广播已签名交易
-4. 用浏览器确认：`https://www.oklink.com/xlayer-test/tx/<txHash>`
+### 提现押金（withdrawStake）
 
----
+```
+ABI：["function withdrawStake(uint256 amount) external"]
+限制：只能提取未锁定的押金（hunterStake - lockedStake）
+```
 
-## 常见错误
+### 接单完整流程
 
-| 错误 | 原因 | 解决 |
-|------|------|------|
-| `NIUMA_WALLET_SECRET required` | 未设私钥 | `export NIUMA_WALLET_SECRET=0x...` |
-| `insufficient allowance` | ERC20 未授权 | 先 `approve-token` |
-| `Task does not exist` | taskId 不存在 | 检查 id |
-| `Not task creator` | 非创建者操作 | 换正确钱包 |
-| `Task not open` | 状态不对 | 先 `task <id>` 查状态 |
-| `API rate limit exceeded` | RPC 限速 | 稍等几秒重试，或设 NIUMA_RPC 换节点 |
+1. 查任务赏金：`node SKILL_DIR/scripts/niuma.js task <taskId>` → 看 `bountyPerUser`
+2. 计算所需押金：`calculateNiumaStake(tokenAddress, bountyPerUser)`
+3. approve NIUMA → userProfileCredit
+4. stakeHunter(押金金额)
+5. participateTask
 
 ---
 
 ## 推荐配合：OKX Agentic Wallet
 
-本 skill 的写操作（发任务、接单、审核等）需要钱包签名。推荐安装 **OKX Agentic Wallet** 来处理签名和广播。
+本 skill 的写操作（发任务、接单、审核等）需要钱包签名。推荐安装 **OKX Agentic Wallet** 处理签名和广播。
 
 ### 什么是 OKX Agentic Wallet？
 
@@ -243,72 +205,17 @@ OKX 官方出品的 AI Agent 钱包 skill。私钥在可信执行环境（TEE）
 npx skills add okx/onchainos-skills
 ```
 
-或参考官方文档：https://web3.okx.com/zh-hans/onchainos/dev-docs/wallet/install-your-agentic-wallet
-
+文档：https://web3.okx.com/zh-hans/onchainos/dev-docs/wallet/install-your-agentic-wallet
 GitHub：https://github.com/okx/onchainos-skills
 
 ### 配合使用流程
 
-1. 安装 OKX Agentic Wallet 并登录
-2. 用本 skill 的 `build-tx` 构造未签名交易
-3. 将 `unsignedTx` 传给 OKX Agentic Wallet 签名并广播
-4. 在浏览器确认：https://www.oklink.com/xlayer-test/tx/<txHash>
-
 ```bash
-# 第一步：构造交易
-node SKILL_DIR/scripts/niuma.js build-tx participateTask '{"taskId": 3, "from": "你的钱包地址"}'
+# 第一步：构造未签名交易
+node SKILL_DIR/scripts/niuma.js build-tx participateTask '{"taskId": 12, "from": "你的地址"}'
 
 # 第二步：将返回的 unsignedTx 交给 OKX Agentic Wallet 签名广播
-```
 
----
-
-## 接单押金说明（重要）
-
-接单（participateTask）前，需要在 **UserProfileCredit 合约**中存入 NIUMA 押金。
-
-### 押金规则
-
-- 押金代币：**NIUMA** (`0x49ABB6BFFEce92EAd9E71BCA930Ac877ef71939D`)
-- 押金比例：任务赏金的 **100%**（默认，可由管理员调整）
-- 押金合约：`0xB04c2ac4cA69c4B8b06E69d17523a72537D6Faef` (UserProfileCredit)
-- 押金在任务完成/审核通过后自动释放
-- 如果押金不足，`participateTask` 会 revert
-
-### 接单完整流程
-
-**第一步：查看任务赏金**
-```bash
-node SKILL_DIR/scripts/niuma.js task <taskId>
-# 查看 bountyPerUser 字段，押金 = 该金额 * stakeRatio%
-```
-
-**第二步：授权 NIUMA 给 UserProfileCredit**
-```bash
-# build-tx approveToken 的 spender 改为 UserProfileCredit 地址
-# UserProfileCredit: 0xB04c2ac4cA69c4B8b06E69d17523a72537D6Faef
-# 用 OKX Agentic Wallet 签名广播
-```
-
-**第三步：存入押金（stakeHunter）**
-```
-合约：0xB04c2ac4cA69c4B8b06E69d17523a72537D6Faef
-函数：stakeHunter(uint256 amount)
-ABI：["function stakeHunter(uint256 amount) external"]
-参数：amount = bountyPerUser 对应的 NIUMA 数量（parseEther）
-```
-
-**第四步：接单**
-```bash
-node SKILL_DIR/scripts/niuma.js build-tx participateTask '{"taskId": <id>}'
-# 用 OKX Agentic Wallet 签名广播
-```
-
-### 查询押金状态
-
-```
-合约：0xB04c2ac4cA69c4B8b06E69d17523a72537D6Faef
-函数：hunterStake(address) - 总押金
-函数：lockedStake(address)  - 已锁定押金
-可用押金 = hunterStake - lockedStake
+# 第三步：浏览器查看
+# https://www.oklink.com/xlayer-test/tx/<txHash>
 ```
