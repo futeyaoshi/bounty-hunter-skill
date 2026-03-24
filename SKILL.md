@@ -48,6 +48,32 @@ ABI：[
 当前已知分类（以链上为准）：
 - categoryId: `1` — 推特（enabled, maxParticipants: 100）
 
+### 查询并确认授权额度（allowance）
+
+发任务或充值押金前，先检查 NIUMA 授权额度是否足够，不够则提前授权。
+
+```
+ABI：[
+  "function allowance(address owner, address spender) view returns (uint256)",
+  "function approve(address spender, uint256 amount) external returns (bool)"
+]
+```
+
+**发任务时：** spender = `contracts.json → core`
+- 需要授权金额 = bountyPerUser × maxParticipants + 手续费（约 13%）
+- 建议 approve 足够大的额度（如 10000 NIUMA），避免频繁授权
+
+**充值押金时：** spender = `contracts.json → userProfileCredit`
+- 需要授权金额 = 押金金额
+
+```bash
+# 快速查余额 + allowance
+node SKILL_DIR/scripts/niuma.js balance <address> <niumaToken>
+# 然后链上查 allowance(address, coreContract)
+```
+
+---
+
 ### 查询代币限额（minAmount / maxAmount）
 
 ```
