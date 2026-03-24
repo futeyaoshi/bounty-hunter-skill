@@ -8,7 +8,7 @@ Niuma Bounty Platform skill — 操作 task.niuma.works 链上赏金任务平台
 
 - Node.js >= 18
 - 依赖：`ethers@^6`（已包含在 package.json）
-- 写操作需设置 `NIUMA_PRIVATE_KEY` 环境变量
+- 写操作需设置 `NIUMA_WALLET_SECRET` 环境变量
 
 首次使用安装依赖：
 ```bash
@@ -92,10 +92,10 @@ node SKILL_DIR/scripts/niuma.js balance <address>                     # OKB
 node SKILL_DIR/scripts/niuma.js balance <address> <tokenAddress>      # ERC20
 ```
 
-### 写操作（需要 NIUMA_PRIVATE_KEY）
+### 写操作（需要 NIUMA_WALLET_SECRET）
 
 ```bash
-export NIUMA_PRIVATE_KEY=0x你的私钥
+export NIUMA_WALLET_SECRET=0x你的私钥
 ```
 
 #### 发布任务
@@ -220,7 +220,7 @@ node SKILL_DIR/scripts/niuma.js build-tx submitTask '{"taskId": 3, "proofHash": 
 
 | 错误 | 原因 | 解决 |
 |------|------|------|
-| `NIUMA_PRIVATE_KEY required` | 未设私钥 | `export NIUMA_PRIVATE_KEY=0x...` |
+| `NIUMA_WALLET_SECRET required` | 未设私钥 | `export NIUMA_WALLET_SECRET=0x...` |
 | `insufficient allowance` | ERC20 未授权 | 先 `approve-token` |
 | `Task does not exist` | taskId 不存在 | 检查 id |
 | `Not task creator` | 非创建者操作 | 换正确钱包 |

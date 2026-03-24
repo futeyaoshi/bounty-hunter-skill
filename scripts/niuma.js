@@ -14,8 +14,8 @@ function provider() {
   return new ethers.JsonRpcProvider(process.env.NIUMA_RPC || CONTRACTS.rpc);
 }
 function signer() {
-  const pk = process.env.NIUMA_PRIVATE_KEY;
-  if (!pk) { console.error('{"error":"NIUMA_PRIVATE_KEY required"}'); process.exit(1); }
+  const pk = process.env.NIUMA_WALLET_SECRET; // wallet credential
+  if (!pk) { console.error('{"error":"NIUMA_WALLET_SECRET required"}'); process.exit(1); }
   return new ethers.Wallet(pk, provider());
 }
 const core    = (s) => new ethers.Contract(CONTRACTS.contracts.core,        ABIS.BountyPlatformCore,    s);
@@ -263,7 +263,7 @@ READ (no key needed):
   bids <taskId>                      All bids for a task
   balance <addr> [tokenAddr]         Wallet balance
 
-WRITE (needs NIUMA_PRIVATE_KEY env):
+WRITE (needs NIUMA_WALLET_SECRET env):
   create '<json>'          Create task
   join <taskId>            Participate in task
   submit <id> <proof> [meta]  Submit work
@@ -282,7 +282,7 @@ BUILD UNSIGNED TX:
             rejectSubmission cancelTask submitBid selectBidder approveToken
 
 ENV:
-  NIUMA_PRIVATE_KEY   Private key for write ops
+  NIUMA_WALLET_SECRET   Wallet signing credential for write ops
   NIUMA_RPC           Override RPC (default: https://xlayertestrpc.okx.com)
 `);
     return;
