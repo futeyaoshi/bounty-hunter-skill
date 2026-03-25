@@ -45,7 +45,7 @@ node SKILL_DIR/scripts/niuma.js create '<json>'
 ```
 
 > startTime/endTime 不填默认：2分钟后开始，24小时后截止。
-> bountyPerUser 最低 100 NIUMA，最高 10,000,000 NIUMA。
+> bountyPerUser 限额从链上 tokenManager 实时读取，check-create 会自动验证。
 > allowance 不足时自动 approve，无需手动处理。
 
 ## 接单
