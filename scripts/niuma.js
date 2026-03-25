@@ -419,7 +419,7 @@ const cmds = {
     const signer = c.runner;
     const p = signer.provider;
     const gasEstimate = await c[method].estimateGas(...args, extraOpts).catch(() => 950000n);
-    const gasLimit = gasEstimate * 120n / 100n;
+    const gasLimit = gasEstimate * 130n / 100n; // 改为130%buffer避免out of gas
     const feeData = await p.getFeeData();
     const nonce = await p.getTransactionCount(signer.address);
     const tx = await c[method](...args, { gasLimit, gasPrice: feeData.gasPrice, nonce, ...extraOpts });
