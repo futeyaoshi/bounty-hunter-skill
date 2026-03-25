@@ -190,19 +190,71 @@ JSON 字段：
 
 #### 构建未签名交易（build-tx）
 
-适合配合 OKX Agentic Wallet 等外部钱包签名：
+适合配合 OKX Agentic Wallet 等外部钱包签名广播，**不需要私钥**。
 
 ```bash
 node SKILL_DIR/scripts/niuma.js build-tx <action> '<json>'
 ```
 
-支持的 action：
-- `participateTask` — 接单
-- `submitWork` — 提交工作
-- `approveSubmission` — 审核通过
-- `rejectSubmission` — 审核拒绝
-- `cancelParticipation` — 取消接单
-- `placeBid` — 竞价
+**返回格式：**
+```json
+{
+  "unsignedTx": {
+    "to": "0x合约地址",
+    "data": "0x编码数据",
+    "value": "0",
+    "chainId": 1952,
+    "gasPrice": "20000001",
+    "nonce": 18
+  },
+  "description": "createTask on Niuma Bounty Platform",
+  "chain": "xlayerTestnet"
+}
+```
+
+**使用流程（配合 OKX Agentic Wallet）：**
+1. 调用 `build-tx` 获取 `unsignedTx`
+2. 将 `unsignedTx` 传给 OKX Agentic Wallet 签名
+3. 广播已签名交易
+4. 在浏览器查看：`https://www.oklink.com/xlayer-test/tx/<txHash>`
+
+**支持的 action：**
+
+| action | 参数 JSON | 说明 |
+|--------|-----------|------|
+| `createTask` | `{title, description, taskType, bountyPerUser, maxParticipants, startTime, endTime, requirements, tokenAddress, categoryId}` | 发布任务 |
+| `participateTask` | `{taskId, from}` | 接单 |
+| `submitTask` | `{taskId, proofHash, metadata}` | 提交工作 |
+| `approveSubmission` | `{taskId, participant}` | 审核通过 |
+| `batchApprove` | `{taskId, participants[]}` | 批量审核 |
+| `rejectSubmission` | `{taskId, participant, reason}` | 审核拒绝 |
+| `cancelTask` | `{taskId}` | 取消任务 |
+| `submitBid` | `{taskId, bidAmount, proposal, contactInfo}` | 竞价 |
+| `cancelBid` | `{taskId}` | 取消竞价 |
+| `selectBidder` | `{taskId, bidder}` | 选标 |
+| `approveToken` | `{tokenAddress, amount}` | 授权 ERC20 给 core 合约 |
+
+**示例：**
+```bash
+# 获取接单的未签名交易数据
+node SKILL_DIR/scripts/niuma.js build-tx participateTask '{"taskId": 5, "from": "0x你的地址"}'
+
+# 获取发任务的未签名交易数据  
+node SKILL_DIR/scripts/niuma.js build-tx createTask '{
+  "title": "推特转发任务",
+  "description": "转发并截图",
+  "taskType": 0,
+  "bountyPerUser": "100",
+  "maxParticipants": 5,
+  "startTime": 1774396932,
+  "endTime": 1774483332,
+  "requirements": "截图链接",
+  "tokenAddress": "<niumaToken地址>",
+  "categoryId": 1
+}'
+```
+
+> ⚠️ build-tx 不检查 allowance，发送前需自行确认已授权足够额度。
 
 ---
 
