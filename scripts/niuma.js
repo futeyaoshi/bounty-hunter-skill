@@ -837,6 +837,43 @@ const cmds = {
     console.log(JSON.stringify({ ...result, inviter: inviterAddr }));
   },
 
+  async 'task-participants'(taskId) {
+    // task-participants <taskId> — list all participants and their submission status
+    const p = new ethers.JsonRpcProvider(CONF.rpc);
+    const coreC = new ethers.Contract(CONF.contracts.core, ABIS.BountyPlatformCore, p);
+    const helperC = new ethers.Contract(CONF.contracts.helper, [
+      'function getSubmission(uint256,address) view returns (address participant, string proofHash, string metadata, uint256 submittedAt, bool isApproved, bool isRejected, bool isPaid, uint256 rejectedAt, bool isAdminRejected, string rejectReason, uint256 participantJoinTime)'
+    ], p);
+    const participants = await coreC.getTaskParticipants(BigInt(taskId));
+    if (participants.length === 0) {
+      console.log(JSON.stringify({ taskId, participants: [] }));
+      return;
+    }
+    const result = [];
+    for (const addr of participants) {
+      try {
+        const s = await helperC.getSubmission(BigInt(taskId), addr);
+        const subStatus = s.isApproved ? 'Approved' : s.isRejected ? 'Rejected' : s.proofHash ? 'Submitted' : 'Joined';
+        result.push({
+          address: addr,
+          status: subStatus,
+          joinedAt: s.participantJoinTime > 0n ? new Date(Number(s.participantJoinTime)*1000).toISOString() : null,
+          submittedAt: s.submittedAt > 0n ? new Date(Number(s.submittedAt)*1000).toISOString() : null,
+          proofHash: s.proofHash || null,
+          metadata: s.metadata ? (() => { try { return JSON.parse(s.metadata); } catch { return s.metadata; } })() : null,
+          isApproved: s.isApproved,
+          isRejected: s.isRejected,
+          isPaid: s.isPaid,
+          rejectReason: s.rejectReason || null
+        });
+      } catch(e) {
+        result.push({ address: addr, error: e.message.slice(0, 60) });
+      }
+      await new Promise(r => setTimeout(r, 400));
+    }
+    console.log(JSON.stringify({ taskId, total: result.length, participants: result }, null, 2));
+  },
+
   async stake(amount) {
     // stake <amount> — deposit NIUMA to UserProfileCredit
     const signer = await cmds._signer();
@@ -991,6 +1028,7 @@ READ (no credentials needed):
   paginated [offset] [limit]            All tasks
   by-status <0-7> [offset] [limit]      Tasks by status
   user-tasks <address>                  Tasks by user
+  task-participants <taskId>            All participants + submission status for a task
   bids <taskId>                         Bids for a bidding task
   balance <address> [tokenAddress]      Wallet balance
   allowance <address> <tokenAddress>    ERC20 allowance
