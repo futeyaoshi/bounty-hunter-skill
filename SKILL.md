@@ -299,7 +299,14 @@ ABI：["function withdrawStake(uint256 amount) external"]
 限制：只能提取未锁定的押金（hunterStake - lockedStake）
 ```
 
-### 接单完整流程
+### 接单注意事项
+
+- **不能接自己创建的任务**（合约会 revert）
+- 接单前确认任务状态为 `Open`，且 `currentParticipants < maxParticipants`
+- 接单前确认任务 `endTime` 未过期
+- 接单前需有足够的 NIUMA 押金（见上方押金说明）
+
+
 
 1. 查任务赏金：`node SKILL_DIR/scripts/niuma.js task <taskId>` → 看 `bountyPerUser`
 2. 计算所需押金：`calculateNiumaStake(tokenAddress, bountyPerUser)`
