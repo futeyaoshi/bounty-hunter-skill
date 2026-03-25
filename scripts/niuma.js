@@ -123,6 +123,231 @@ const cmds = {
     console.log(JSON.stringify({ owner: ownerAddr, spender: CONF.contracts.core, token: sym, allowance: ethers.formatUnits(val, dec) }));
   },
 
+  // ── 前置检查工具函数 ─────────────────────────────────────────────
+
+  /**
+   * 检查发任务所有前置条件，返回 { pass, checks } 结构。
+   * checks 是数组，每项 { name, pass, detail }
+   */
+  async _preCheckCreate(args, signerAddress) {
+    const p = provider();
+    const checks = [];
+    const fail = (name, detail) => checks.push({ name, pass: false, detail });
+    const ok   = (name, detail) => checks.push({ name, pass: true,  detail });
+
+    // 1. 参数合规
+    if (!args.title || args.title.trim() === '') { fail('title', '标题不能为空'); }
+    else ok('title', args.title);
+
+    const bountyPerUser = parseFloat(args.bountyPerUser);
+    if (isNaN(bountyPerUser) || bountyPerUser <= 0) { fail('bountyPerUser', '赏金必须 > 0'); }
+
+    const maxP = parseInt(args.maxParticipants) || 1;
+    if (maxP <= 0) { fail('maxParticipants', '参与人数必须 > 0'); }
+
+    // 2. 时间合规
+    const block = await p.getBlock('latest');
+    const now = block.timestamp;
+    const startTime = args.startTime || (now + 120);
+    const endTime   = args.endTime   || (now + 86400);
+    if (endTime <= now) { fail('endTime', `已过期，当前链上时间 ${new Date(now*1000).toISOString()}`); }
+    else ok('endTime', new Date(endTime*1000).toISOString());
+    if (startTime >= endTime) { fail('startTime<endTime', 'startTime 必须早于 endTime'); }
+    else ok('startTime<endTime', 'ok');
+
+    // 3. 分类合规
+    const catMgr = new ethers.Contract(CONF.contracts.categoryManager, [
+      'function categoryCount() view returns (uint256)',
+      'function categories(uint256) view returns (uint256 id, string name, bool enabled, uint256 createdAt)'
+    ], p);
+    const categoryId = parseInt(args.categoryId) || 1;
+    try {
+      const catCount = await catMgr.categoryCount();
+      if (categoryId < 1 || BigInt(categoryId) > catCount) {
+        fail('categoryId', `categoryId ${categoryId} 不存在，当前共 ${catCount} 个分类`);
+      } else {
+        const cat = await catMgr.categories(categoryId);
+        if (!cat.enabled) { fail('categoryId', `分类 ${cat.name} 已禁用`); }
+        else ok('categoryId', `${cat.name} (enabled)`);
+      }
+    } catch(e) { fail('categoryId', '分类查询失败: ' + e.message); }
+
+    // 4. Token 限额
+    const tokenAddr = args.tokenAddress || CONF.contracts.niumaToken;
+    const isNative = tokenAddr === ethers.ZeroAddress;
+    if (!isNative) {
+      try {
+        const tmgr = new ethers.Contract(CONF.contracts.tokenManager, [
+          'function getTokenInfo(address) view returns (tuple(address tokenAddress, string symbol, uint8 decimals, uint256 baseFee, uint256 communityFeePercentage, uint256 developerFeePercentage, uint256 referralFeePercentage, uint256 minAmount, uint256 maxAmount, bool enabled, uint256 sortOrder, uint256 niumaRate))'
+        ], p);
+        const info = await tmgr.getTokenInfo(tokenAddr);
+        if (!info.enabled) { fail('token', `token ${info.symbol} 未被平台启用`); }
+        const bountyWei = ethers.parseEther(bountyPerUser.toString());
+        if (bountyWei < info.minAmount) {
+          fail('minAmount', `bountyPerUser ${bountyPerUser} 低于最低 ${ethers.formatEther(info.minAmount)} ${info.symbol}`);
+        } else if (bountyWei > info.maxAmount) {
+          fail('maxAmount', `bountyPerUser ${bountyPerUser} 高于最高 ${ethers.formatEther(info.maxAmount)} ${info.symbol}`);
+        } else {
+          ok('amount_range', `${ethers.formatEther(info.minAmount)} ~ ${ethers.formatEther(info.maxAmount)} ${info.symbol}`);
+        }
+      } catch(e) { fail('tokenManager', '限额查询失败: ' + e.message); }
+    }
+
+    // 5. 余额 & allowance
+    if (!isNative) {
+      try {
+        const niuma = new ethers.Contract(tokenAddr, ABIS.ERC20, p);
+        const bountyWei = ethers.parseEther(bountyPerUser.toString());
+        const totalNeeded = bountyWei * BigInt(maxP) * 115n / 100n; // +15% 手续费
+        const [bal, allowanceVal] = await Promise.all([
+          niuma.balanceOf(signerAddress),
+          niuma.allowance(signerAddress, CONF.contracts.core)
+        ]);
+        const sym = 'NIUMA';
+        if (bal < totalNeeded) {
+          fail('balance', `余额不足：有 ${ethers.formatEther(bal)} ${sym}，需要 ~${ethers.formatEther(totalNeeded)} ${sym}（含手续费）`);
+        } else {
+          ok('balance', `${ethers.formatEther(bal)} ${sym} >= ~${ethers.formatEther(totalNeeded)} ${sym}`);
+        }
+        if (allowanceVal < totalNeeded) {
+          ok('allowance', `当前授权 ${ethers.formatEther(allowanceVal)} ${sym}，不足，将自动 approve`);
+        } else {
+          ok('allowance', `已授权 ${ethers.formatEther(allowanceVal)} ${sym}，足够`);
+        }
+      } catch(e) { fail('balance_check', '余额检查失败: ' + e.message); }
+    } else {
+      // OKB native
+      try {
+        const bountyWei = ethers.parseEther(bountyPerUser.toString());
+        const totalNeeded = bountyWei * BigInt(maxP);
+        const bal = await p.getBalance(signerAddress);
+        if (bal < totalNeeded) {
+          fail('balance', `OKB 余额不足：有 ${ethers.formatEther(bal)}，需要 ${ethers.formatEther(totalNeeded)}`);
+        } else {
+          ok('balance', `${ethers.formatEther(bal)} OKB >= ${ethers.formatEther(totalNeeded)} OKB`);
+        }
+      } catch(e) { fail('balance_check', 'OKB 余额检查失败: ' + e.message); }
+    }
+
+    const pass = checks.every(c => c.pass);
+    return { pass, checks };
+  },
+
+  /**
+   * 检查接单所有前置条件，返回 { pass, checks } 结构。
+   */
+  async _preCheckParticipate(taskId, signerAddress) {
+    const p = provider();
+    const checks = [];
+    const fail = (name, detail) => checks.push({ name, pass: false, detail });
+    const ok   = (name, detail) => checks.push({ name, pass: true,  detail });
+
+    // 1. 获取任务信息
+    let task;
+    try {
+      task = await core().getTaskInfo(taskId);
+    } catch(e) {
+      fail('task_exists', `任务 #${taskId} 获取失败: ` + e.message);
+      return { pass: false, checks };
+    }
+
+    // 2. 任务状态必须是 Open (1)
+    const status = Number(task.status);
+    if (status !== 1) {
+      fail('status', `任务状态为 ${STATUS[status]||status}，必须是 Open`);
+    } else {
+      ok('status', 'Open');
+    }
+
+    // 3. 参与人数未满
+    const curP = Number(task.currentParticipants);
+    const maxP = Number(task.maxParticipants);
+    if (curP >= maxP) {
+      fail('participants', `名额已满 (${curP}/${maxP})`);
+    } else {
+      ok('participants', `${curP}/${maxP}`);
+    }
+
+    // 4. 未过期
+    const block = await p.getBlock('latest');
+    const now = block.timestamp;
+    const endTime = Number(task.endTime);
+    if (endTime <= now) {
+      fail('endTime', `任务已过期 (${new Date(endTime*1000).toISOString()})`);
+    } else {
+      const remaining = endTime - now;
+      ok('endTime', `距截止还有 ${Math.floor(remaining/3600)}h${Math.floor((remaining%3600)/60)}m`);
+    }
+
+    // 5. 不能接自己的任务
+    if (task.creator.toLowerCase() === signerAddress.toLowerCase()) {
+      fail('not_own_task', '不能接自己发布的任务');
+    } else {
+      ok('not_own_task', 'ok');
+    }
+
+    // 6. 押金检查
+    const tokenAddr = task.tokenAddress === ethers.ZeroAddress ? CONF.contracts.niumaToken : task.tokenAddress;
+    const bountyWei = task.bountyPerUser;
+    try {
+      const upc = new ethers.Contract(CONF.contracts.userProfileCredit, [
+        'function hunterStake(address) view returns (uint256)',
+        'function lockedStake(address) view returns (uint256)',
+        'function calculateNiumaStake(address token, uint256 amount) view returns (uint256)'
+      ], p);
+      const [totalStake, lockedStake, requiredStake] = await Promise.all([
+        upc.hunterStake(signerAddress),
+        upc.lockedStake(signerAddress),
+        upc.calculateNiumaStake(tokenAddr, bountyWei)
+      ]);
+      const available = totalStake - lockedStake;
+      if (available < requiredStake) {
+        fail('stake', `押金不足：可用 ${ethers.formatEther(available)} NIUMA，需要 ${ethers.formatEther(requiredStake)} NIUMA。请先执行 stake 命令充值`);
+      } else {
+        ok('stake', `可用押金 ${ethers.formatEther(available)} NIUMA >= 需要 ${ethers.formatEther(requiredStake)} NIUMA`);
+      }
+    } catch(e) {
+      fail('stake_check', '押金检查失败: ' + e.message);
+    }
+
+    const pass = checks.every(c => c.pass);
+    return { pass, checks };
+  },
+
+  // ── 只读前置检查命令（供 AI 预检）─────────────────────────────────
+
+  async 'check-create'(jsonStr) {
+    const args = JSON.parse(jsonStr);
+    // 需要地址：从 NIUMA_WALLET_SECRET 或 args.from
+    let signerAddress = args.from;
+    if (!signerAddress) {
+      const signer = await cmds._signer();
+      signerAddress = signer.address;
+    }
+    const result = await cmds._preCheckCreate(args, signerAddress);
+    const failed = result.checks.filter(c => !c.pass);
+    console.log(JSON.stringify({
+      address: signerAddress, pass: result.pass,
+      summary: result.pass ? '✅ 所有检查通过，可以发任务' : `❌ ${failed.length} 项检查未通过`,
+      checks: result.checks
+    }, null, 2));
+  },
+
+  async 'check-participate'(taskId, fromAddr) {
+    let signerAddress = fromAddr;
+    if (!signerAddress) {
+      const signer = await cmds._signer();
+      signerAddress = signer.address;
+    }
+    const result = await cmds._preCheckParticipate(BigInt(taskId), signerAddress);
+    const failed = result.checks.filter(c => !c.pass);
+    console.log(JSON.stringify({
+      address: signerAddress, taskId, pass: result.pass,
+      summary: result.pass ? '✅ 所有检查通过，可以接单' : `❌ ${failed.length} 项检查未通过`,
+      checks: result.checks
+    }, null, 2));
+  },
+
   // ── 写操作（需要 NIUMA_WALLET_SECRET）─────────────────────────────
   async _signer() {
     const pk = process.env.NIUMA_WALLET_SECRET;
@@ -172,6 +397,15 @@ const cmds = {
     const coreC = new ethers.Contract(CONF.contracts.core, ABIS.BountyPlatformCore, signer);
     const niuma = new ethers.Contract(CONF.contracts.niumaToken, ABIS.ERC20, signer);
 
+    // ── 前置检查 ──
+    const preCheck = await cmds._preCheckCreate(args, signer.address);
+    const hardFails = preCheck.checks.filter(c => !c.pass && c.name !== 'allowance');
+    if (hardFails.length > 0) {
+      const msg = hardFails.map(c => `[${c.name}] ${c.detail}`).join('; ');
+      console.error(JSON.stringify({ error: '前置检查未通过，交易已取消', failed: hardFails }));
+      process.exit(1);
+    }
+
     const bountyWei = ethers.parseEther(args.bountyPerUser.toString());
     const maxP = BigInt(args.maxParticipants || 1);
     const tokenAddr = args.tokenAddress || CONF.contracts.niumaToken;
@@ -185,7 +419,7 @@ const cmds = {
 
     // check & approve allowance
     if (tokenAddr !== ethers.ZeroAddress) {
-      const needed = totalBounty * 120n / 100n; // bounty + ~20% fee buffer
+      const needed = totalBounty * 115n / 100n; // bounty + ~15% fee buffer
       const allowance = await niuma.allowance(signer.address, CONF.contracts.core);
       if (allowance < needed) {
         process.stderr.write('approving NIUMA...\n');
@@ -208,6 +442,15 @@ const cmds = {
   async participate(taskId) {
     const signer = await cmds._signer();
     const coreC = new ethers.Contract(CONF.contracts.core, ABIS.BountyPlatformCore, signer);
+
+    // ── 前置检查 ──
+    const preCheck = await cmds._preCheckParticipate(BigInt(taskId), signer.address);
+    if (!preCheck.pass) {
+      const failed = preCheck.checks.filter(c => !c.pass);
+      console.error(JSON.stringify({ error: '接单前置检查未通过，交易已取消', failed }));
+      process.exit(1);
+    }
+
     const result = await cmds._sendTx(coreC, 'participateTask', [BigInt(taskId)]);
     console.log(JSON.stringify({ ...result, taskId }));
   },
@@ -222,6 +465,14 @@ const cmds = {
     ], signer);
     const niuma = new ethers.Contract(CONF.contracts.niumaToken, ABIS.ERC20, signer);
     const amtWei = ethers.parseEther(amount.toString());
+
+    // ── 前置检查：余额够不够 ──
+    const bal = await niuma.balanceOf(signer.address);
+    if (bal < amtWei) {
+      console.error(JSON.stringify({ error: 'NIUMA 余额不足，押金充值取消', balance: ethers.formatEther(bal), requested: amount }));
+      process.exit(1);
+    }
+
     // approve first
     const allowance = await niuma.allowance(signer.address, CONF.contracts.userProfileCredit);
     if (allowance < amtWei) {
@@ -352,6 +603,8 @@ READ (no credentials needed):
   balance <address> [tokenAddress]      Wallet balance
   allowance <address> <tokenAddress>    ERC20 allowance
   stake-info [address]                  NIUMA stake/locked balance
+  check-create '<json>'                 预检发任务条件（不发交易）
+  check-participate <taskId> [address]  预检接单条件（不发交易）
 
 WRITE (requires NIUMA_WALLET_SECRET env var):
   approve <tokenAddr> <spender> <amount>  Approve ERC20 (auto-skips if enough)

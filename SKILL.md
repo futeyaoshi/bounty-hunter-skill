@@ -299,20 +299,50 @@ ABI：["function withdrawStake(uint256 amount) external"]
 限制：只能提取未锁定的押金（hunterStake - lockedStake）
 ```
 
-### 接单注意事项
+### 前置检查命令（预检，不发交易）
 
-- **不能接自己创建的任务**（合约会 revert）
-- 接单前确认任务状态为 `Open`，且 `currentParticipants < maxParticipants`
-- 接单前确认任务 `endTime` 未过期
-- 接单前需有足够的 NIUMA 押金（见上方押金说明）
+在执行写操作前，**先用这两个命令验证条件**，确保交易不会失败。
 
+#### 发任务前检查
 
+```bash
+node SKILL_DIR/scripts/niuma.js check-create '<json>' 
+# json 字段同 create 命令，额外可加 "from": "<address>" 指定地址
+# 返回每项检查的 pass/fail，summary 说明通过还是未通过
+```
 
-1. 查任务赏金：`node SKILL_DIR/scripts/niuma.js task <taskId>` → 看 `bountyPerUser`
-2. 计算所需押金：`calculateNiumaStake(tokenAddress, bountyPerUser)`
-3. approve NIUMA → userProfileCredit
-4. stakeHunter(押金金额)
-5. participateTask
+检查项：
+- 标题非空
+- endTime 未过期，startTime < endTime
+- categoryId 存在且 enabled
+- bountyPerUser 在 minAmount ~ maxAmount 范围内
+- token 被平台启用
+- NIUMA/OKB 余额足够（含手续费 ~15%）
+- allowance 是否需要 approve（写操作会自动处理）
+
+#### 接单前检查
+
+```bash
+node SKILL_DIR/scripts/niuma.js check-participate <taskId> [address]
+# address 可选，不填则从 NIUMA_WALLET_SECRET 读取
+```
+
+检查项：
+- 任务状态为 Open
+- 名额未满（currentParticipants < maxParticipants）
+- 任务未过期
+- 不是自己发布的任务
+- 可用押金（hunterStake - lockedStake）>= calculateNiumaStake(token, bountyPerUser)
+
+#### 写操作内置检查
+
+`create`、`participate`、`stake` 命令已内置前置检查，条件不满足时**直接报错退出，不发交易**：
+- `create`：余额不足、金额超限、分类无效、时间错误时拒绝
+- `participate`：任务过期/满员/非Open/自己任务/押金不足时拒绝
+- `stake`：NIUMA 余额不足时拒绝
+
+---
+
 
 ---
 
