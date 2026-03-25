@@ -320,7 +320,7 @@ const cmds = {
       const eligible = abiCoder.decode(['bool'], eligResult)[0];
       if (!eligible) {
         // 进一步查原因：冷却时间 or activeCount
-        const cooldownData = '0x76f79b10';
+        const cooldownData = '0x2bf403a3'; // participationCooldown
         const lastTimeData = '0xcf1513fc' + abiCoder.encode(['address'], [signerAddress]).slice(2);
         const [cooldownRes, lastTimeRes] = await Promise.all([
           p.call({ to: upcAddr, data: cooldownData }).catch(() => null),
@@ -332,9 +332,10 @@ const cmds = {
           const cooldown = abiCoder.decode(['uint256'], cooldownRes)[0];
           const lastTime = abiCoder.decode(['uint256'], lastTimeRes)[0];
           const elapsed = BigInt(block.timestamp) - lastTime;
-          if (elapsed < cooldown) {
+          if (lastTime > 0n && elapsed < cooldown) {
             const wait = cooldown - elapsed;
-            reason = `接单冷却中，还需等待 ${wait}秒（冷却时间 ${cooldown}秒）`;
+            const mins = Math.ceil(Number(wait) / 60);
+            reason = `接单冷却中，还需等待 ${wait}秒（约${mins}分钟），上次接单: ${new Date(Number(lastTime)*1000).toISOString()}`;
           } else {
             reason = `合约资格验证未通过（activeCount 或其他限制），请联系平台管理员`;
           }
