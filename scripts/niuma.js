@@ -519,6 +519,39 @@ const cmds = {
     console.log(JSON.stringify({ ...result, taskId }));
   },
 
+  async submit(taskId, proofHash, metadataStr) {
+    // submit <taskId> <proofHash> [metadata]
+    const signer = await cmds._signer();
+    const coreC = new ethers.Contract(CONF.contracts.core, ABIS.BountyPlatformCore, signer);
+    const metadata = metadataStr || '';
+    const result = await cmds._sendTx(coreC, 'submitTask', [BigInt(taskId), proofHash, metadata]);
+    console.log(JSON.stringify({ ...result, taskId, proofHash }));
+  },
+
+  async approve_submission(taskId, participant) {
+    // approve-submission <taskId> <participantAddress>
+    const signer = await cmds._signer();
+    const coreC = new ethers.Contract(CONF.contracts.core, ABIS.BountyPlatformCore, signer);
+    const result = await cmds._sendTx(coreC, 'approveSubmission', [BigInt(taskId), participant]);
+    console.log(JSON.stringify({ ...result, taskId, participant }));
+  },
+
+  async reject_submission(taskId, participant, reason) {
+    // reject-submission <taskId> <participantAddress> <reason>
+    const signer = await cmds._signer();
+    const coreC = new ethers.Contract(CONF.contracts.core, ABIS.BountyPlatformCore, signer);
+    const result = await cmds._sendTx(coreC, 'rejectSubmission', [BigInt(taskId), participant, reason || '']);
+    console.log(JSON.stringify({ ...result, taskId, participant }));
+  },
+
+  async create_dispute(taskId, reason, evidenceHash) {
+    // create-dispute <taskId> <reason> [evidenceHash]
+    const signer = await cmds._signer();
+    const coreC = new ethers.Contract(CONF.contracts.core, ABIS.BountyPlatformCore, signer);
+    const result = await cmds._sendTx(coreC, 'createDispute', [BigInt(taskId), reason || '', evidenceHash || '']);
+    console.log(JSON.stringify({ ...result, taskId }));
+  },
+
   async stake(amount) {
     // stake <amount> — deposit NIUMA to UserProfileCredit
     const signer = await cmds._signer();
@@ -654,7 +687,9 @@ const cmds = {
 
 const [,,cmd,...rest] = process.argv;
 (async () => {
-  if (!cmd || !cmds[cmd]) {
+  // 将连字符命令转为下划线以匹配函数名 (e.g. approve-submission → approve_submission)
+  const cmdKey = cmd ? cmd.replace(/-/g, '_') : '';
+  if (!cmd || !cmds[cmdKey]) {
     console.log(`
 Niuma Bounty Platform CLI  -  task.niuma.works / XLayer
 Read-only queries + unsigned tx builder for wallet plugins.
@@ -677,11 +712,15 @@ READ (no credentials needed):
   check-participate <taskId> [address]  预检接单条件（不发交易）
 
 WRITE (requires NIUMA_WALLET_SECRET env var):
-  approve <tokenAddr> <spender> <amount>  Approve ERC20 (auto-skips if enough)
-  create '<json>'                         Create task (auto-approves if needed)
-  participate <taskId>                    Join a task
-  stake <amount>                          Deposit NIUMA to UserProfileCredit
-  unstake <amount>                        Withdraw unlocked NIUMA
+  approve <tokenAddr> <spender> <amount>   Approve ERC20 (auto-skips if enough)
+  create '<json>'                          Create task (auto-approves if needed)
+  participate <taskId>                     Join a task
+  submit <taskId> <proofHash> [metadata]   Submit work proof
+  approve-submission <taskId> <address>    Approve hunter submission (creator only)
+  reject-submission <taskId> <addr> <reason>  Reject hunter submission (creator only)
+  create-dispute <taskId> <reason> [evidenceHash]  Dispute a rejection
+  stake <amount>                           Deposit NIUMA to UserProfileCredit
+  unstake <amount>                         Withdraw unlocked NIUMA
 
 BUILD UNSIGNED TX (for wallet plugin signing):
   build-tx <command> '<json>'
@@ -696,7 +735,7 @@ ENV:
     return;
   }
   try {
-    await cmds[cmd](...rest);
+    await cmds[cmdKey](...rest);
   } catch(e) {
     console.error(JSON.stringify({ error: e.reason || e.shortMessage || e.message }));
     process.exit(1);
