@@ -661,6 +661,115 @@ const cmds = {
     console.log(JSON.stringify(result, null, 2));
   },
 
+  async profile(addr) {
+    // profile [address] — show user profile, credits, stake, bindings
+    const p = new ethers.JsonRpcProvider(CONF.rpc);
+    const address = addr || (await cmds._signer()).address;
+    const upc = new ethers.Contract(CONF.contracts.userProfileCredit, [
+      'function getCredit(address) view returns (uint8 hunter, uint8 employer)',
+      'function hunterStake(address) view returns (uint256)',
+      'function lockedStake(address) view returns (uint256)',
+      'function isStakeExempt(address) view returns (bool)',
+      'function banned(address) view returns (bool)',
+      'function telegram(address) view returns (string)',
+      'function twitter(address) view returns (string)',
+      'function email(address) view returns (string)',
+      'function credits(address) view returns (uint8 hunterScore, uint8 employerScore, uint32 hunterSuccess, uint32 employerSuccess, bool initialized)',
+      'function lastTaskTime(address) view returns (uint256)'
+    ], p);
+    const niuma = new ethers.Contract(CONF.contracts.niumaToken, ABIS.ERC20, p);
+    const [credit, totalStake, locked, exempt, isBanned, tg, tw, em, bal, raw, lastTask] = await Promise.all([
+      upc.getCredit(address),
+      upc.hunterStake(address),
+      upc.lockedStake(address),
+      upc.isStakeExempt(address),
+      upc.banned(address),
+      upc.telegram(address),
+      upc.twitter(address),
+      upc.email(address),
+      niuma.balanceOf(address),
+      upc.credits(address),
+      upc.lastTaskTime(address)
+    ]);
+    const cooldownEnd = Number(lastTask) + 3600;
+    const now = Math.floor(Date.now()/1000);
+    console.log(JSON.stringify({
+      address,
+      balance: { NIUMA: ethers.formatEther(bal) },
+      credits: {
+        hunterScore: credit.hunter.toString(),
+        employerScore: credit.employer.toString(),
+        hunterSuccess: raw.hunterSuccess.toString(),
+        employerSuccess: raw.employerSuccess.toString(),
+        banned: isBanned
+      },
+      stake: {
+        total: ethers.formatEther(totalStake),
+        locked: ethers.formatEther(locked),
+        available: ethers.formatEther(totalStake - locked),
+        isStakeExempt: exempt
+      },
+      cooldown: {
+        lastTaskTime: Number(lastTask) > 0 ? new Date(Number(lastTask)*1000).toISOString() : null,
+        cooldownEndsAt: Number(lastTask) > 0 ? new Date(cooldownEnd*1000).toISOString() : null,
+        canAcceptNow: now >= cooldownEnd
+      },
+      bindings: {
+        telegram: tg || null,
+        twitter: tw || null,
+        email: em || null
+      }
+    }, null, 2));
+  },
+
+  async 'my-tasks'() {
+    // my-tasks — show tasks I participated in
+    const signer = await cmds._signer();
+    const p = signer.provider;
+    const coreC = new ethers.Contract(CONF.contracts.core, ABIS.BountyPlatformCore, p);
+    const ids = await coreC.getUserParticipatedTasks(signer.address);
+    console.log(JSON.stringify({ address: signer.address, participatedTasks: ids.map(i=>i.toString()) }));
+  },
+
+  async 'my-created'() {
+    // my-created — show tasks I created
+    const signer = await cmds._signer();
+    const p = signer.provider;
+    const coreC = new ethers.Contract(CONF.contracts.core, ABIS.BountyPlatformCore, p);
+    const ids = await coreC.getUserCreatedTasks(signer.address);
+    console.log(JSON.stringify({ address: signer.address, createdTasks: ids.map(i=>i.toString()) }));
+  },
+
+  async 'bind-telegram'(tgHandle) {
+    // bind-telegram <handle> — bind Telegram handle on-chain
+    const signer = await cmds._signer();
+    const upc = new ethers.Contract(CONF.contracts.userProfileCredit, [
+      'function bindTelegram(string calldata tg) external'
+    ], signer);
+    const result = await cmds._sendTx(upc, 'bindTelegram', [tgHandle]);
+    console.log(JSON.stringify({ ...result, telegram: tgHandle }));
+  },
+
+  async 'bind-twitter'(handle) {
+    // bind-twitter <handle> — bind Twitter handle on-chain
+    const signer = await cmds._signer();
+    const upc = new ethers.Contract(CONF.contracts.userProfileCredit, [
+      'function bindTwitter(string calldata tw) external'
+    ], signer);
+    const result = await cmds._sendTx(upc, 'bindTwitter', [handle]);
+    console.log(JSON.stringify({ ...result, twitter: handle }));
+  },
+
+  async 'bind-email'(em) {
+    // bind-email <email> — bind email on-chain
+    const signer = await cmds._signer();
+    const upc = new ethers.Contract(CONF.contracts.userProfileCredit, [
+      'function bindEmail(string calldata em) external'
+    ], signer);
+    const result = await cmds._sendTx(upc, 'bindEmail', [em]);
+    console.log(JSON.stringify({ ...result, email: em }));
+  },
+
   async stake(amount) {
     // stake <amount> — deposit NIUMA to UserProfileCredit
     const signer = await cmds._signer();
@@ -798,7 +907,7 @@ const [,,cmd,...rest] = process.argv;
 (async () => {
   // 将连字符命令转为下划线以匹配函数名 (e.g. approve-submission → approve_submission)
   const cmdKey = cmd ? cmd.replace(/-/g, '_') : '';
-  if (!cmd || !cmds[cmdKey]) {
+  if (!cmd || (!cmds[cmdKey] && !cmds[cmd])) {
     console.log(`
 Niuma Bounty Platform CLI  -  task.niuma.works / XLayer
 Read-only queries + unsigned tx builder for wallet plugins.
@@ -819,8 +928,13 @@ READ (no credentials needed):
   balance <address> [tokenAddress]      Wallet balance
   allowance <address> <tokenAddress>    ERC20 allowance
   stake-info [address]                  NIUMA stake/locked balance
+  profile [address]                     User profile: credits, stake, bindings
   check-create '<json>'                 预检发任务条件（不发交易）
   check-participate <taskId> [address]  预检接单条件（不发交易）
+
+READ (requires NIUMA_WALLET_SECRET for own address):
+  my-tasks                              Tasks I participated in
+  my-created                            Tasks I created
 
 WRITE (requires NIUMA_WALLET_SECRET env var):
   approve <tokenAddr> <spender> <amount>   Approve ERC20 (auto-skips if enough)
@@ -833,6 +947,9 @@ WRITE (requires NIUMA_WALLET_SECRET env var):
   submit-bid <taskId> <amount> <proposal> <contact>  Submit bid (Bidding tasks)
   cancel-bid <taskId>                      Cancel your bid
   select-bidder <taskId> <address>         Select winning bidder (creator only)
+  bind-telegram <handle>                   Bind Telegram handle on-chain
+  bind-twitter <handle>                    Bind Twitter handle on-chain
+  bind-email <email>                       Bind email on-chain
   stake <amount>                           Deposit NIUMA to UserProfileCredit
   unstake <amount>                         Withdraw unlocked NIUMA
 
@@ -849,7 +966,7 @@ ENV:
     return;
   }
   try {
-    await cmds[cmdKey](...rest);
+    await (cmds[cmdKey] || cmds[cmd])(...rest);
   } catch(e) {
     console.error(JSON.stringify({ error: e.reason || e.shortMessage || e.message }));
     process.exit(1);

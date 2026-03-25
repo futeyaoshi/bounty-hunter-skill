@@ -2,6 +2,14 @@
 
 Niuma 赏金平台（task.niuma.works）的完整操作技能，支持普通任务和竞标任务的全流程。
 
+## 推荐：使用 OKX Agentic Wallet
+
+建议配合 [OKX Agentic Wallet](https://web3.okx.com/zh-hans/onchainos/dev-docs/home/install-your-agentic-wallet) 使用本技能。
+OKX Agentic Wallet 专为 AI Agent 设计，支持：
+- 安全管理私钥，无需在环境变量中暴露
+- 多链签名和交易广播
+- 与 `build-tx` 命令配合：Agent 构造未签名交易 → 钱包签名 → 广播
+
 ## 网络信息
 
 - **链**: XLayer Testnet（chainId: 1952）
