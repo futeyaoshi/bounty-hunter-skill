@@ -29,6 +29,9 @@ node scripts/niuma.js categories
 # 查看支持的 token（发任务前查，tokenAddress 必须是 enabled 的 token）
 node scripts/niuma.js tokens
 
+# 查看我的账户信息（余额、信用分、押金、冷却时间、绑定）
+NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js profile
+
 # 查看活跃任务列表
 node scripts/niuma.js list
 
@@ -55,8 +58,17 @@ node scripts/niuma.js check-participate <taskId>
 | `bids <taskId>` | 竞标任务的所有投标 |
 | `balance <address> [token]` | 余额查询 |
 | `stake-info [address]` | 押金信息 |
+| `profile [address]` | 用户完整信息（信用分、押金、冷却时间、绑定状态） |
+| `referral-info [address]` | 邀请统计（邀请人、被邀请人、奖励记录、邀请链接） |
 | `check-participate <taskId> [addr]` | 接单前置检查 |
 | `check-create '<json>'` | 发任务前置检查 |
+
+### 需要私钥的只读命令
+
+| 命令 | 说明 |
+|------|------|
+| `my-tasks` | 我参与的任务列表 |
+| `my-created` | 我发布的任务列表 |
 
 ### 写入命令（需要 NIUMA_WALLET_SECRET）
 
@@ -113,6 +125,27 @@ NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js unstake <amount>
 node scripts/niuma.js stake-info <address>
 ```
 
+#### 账户绑定
+```bash
+# 绑定 Telegram（链上操作，可修改）
+NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js bind-telegram '@your_handle'
+
+# 绑定 Twitter
+NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js bind-twitter '@your_handle'
+
+# 绑定邮箱
+NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js bind-email 'your@email.com'
+```
+
+#### 邀请系统
+```bash
+# 查看邀请统计（邀请人、被邀请人、奖励记录、邀请链接）
+node scripts/niuma.js referral-info <address>
+
+# 绑定邀请人（链上操作，绑定后不可修改！）
+NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js bind-inviter <inviterAddress>
+```
+
 ## 任务状态码
 
 | 状态码 | 名称 | 说明 |
@@ -153,6 +186,7 @@ node scripts/niuma.js stake-info <address>
 - 每次接单后有 **1 小时冷却时间**（taskCooldown=3600s）
 - 信用分需 >= 60（minCreditScore），新地址默认满足
 - 用 `check-participate` 命令预检，会明确显示失败原因
+- `profile` 命令的 `cooldown.canAcceptNow` 字段显示当前是否可接单
 
 ### ⚠️ 竞标任务特殊规则
 - `maxParticipants` 必须传 1（竞标任务固定单人）
@@ -166,30 +200,48 @@ node scripts/niuma.js stake-info <address>
 - 裁决后等待平台仲裁员调用 `resolveDispute`
 - 裁决期间押金锁定，不能提取
 
+### ⚠️ 邀请系统
+- `bind-inviter` 绑定后**不可修改**，操作前务必确认地址正确
+- 邀请人和被邀请人都必须是 EOA（非合约地址）
+- 不能循环邀请（A邀请B，B不能再邀请A）
+
 ## 合约地址（XLayer Testnet）
 
 ```json
 {
-  "core": "0x3E7765a23AEE412bfc36760Ec8Abb495fb5c6370",
-  "bidding": "0xC917e6426608E1A7d0267b9346C9c70F97Cdb65B",
-  "helper": "0xA7e63aC45FAd693f69be23F2B2072CBA4345881e",
-  "userProfileCredit": "0x6CcDefaa116E17f19AC3A28d24f4b0C4a83C7B45",
-  "categoryManager": "0xA63C1aBAe66a1687b80Da9573203DDcB9B19D47C",
-  "tokenManager": "0xd1915fAdB020B6E5410fA480F415e287b32B4612",
-  "niumaToken": "0x49ABB6BFFEce92EAd9E71BCA930Ac877ef71939D"
-}
-```
+  
+ hunter 在被拒绝后才能发起裁决（create-dispute）
+- 裁决后等待平台仲裁员调用 resolveDispute
+- 裁决期间押金锁定，不能提取
+
+### 邀请系统注意
+- bind-inviter 绑定后不可修改，操作前务必确认地址正确
+- 邀请人和被邀请人都必须是 EOA（非合约地址）
+- 不能循环邀请（A邀请B，B不能再邀请A）
+
+## 合约地址（XLayer Testnet）
+
+- core: 0x3E7765a23AEE412bfc36760Ec8Abb495fb5c6370
+- bidding: 0xC917e6426608E1A7d0267b9346C9c70F97Cdb65B
+- helper: 0xA7e63aC45FAd693f69be23F2B2072CBA4345881e
+- userProfileCredit: 0x6CcDefaa116E17f19AC3A28d24f4b0C4a83C7B45
+- categoryManager: 0xA63C1aBAe66a1687b80Da9573203DDcB9B19D47C
+- tokenManager: 0xd1915fAdB020B6E5410fA480F415e287b32B4612
+- referralSystem: 0x775f51F3A197793041f0C57EdC47Ee17aB6F48fF
+- niumaToken: 0x49ABB6BFFEce92EAd9E71BCA930Ac877ef71939D
 
 ## build-tx（钱包插件签名模式）
 
 给不想在服务端暴露私钥的场景用，返回未签名交易让前端钱包签名：
 
-```bash
-node scripts/niuma.js build-tx <command> '<json>'
-
-# 支持的命令：
-# createTask participateTask submitTask approveSubmission
-# batchApprove rejectSubmission cancelTask
-# createDispute resolveDispute
-# submitBid cancelBid selectBidder approveToken
-```
+  node scripts/niuma.js build-tx createTask ...
+  node scripts/niuma.js build-tx participateTask ...
+  node scripts/niuma.js build-tx submitTask ...
+  node scripts/niuma.js build-tx approveSubmission ...
+  node scripts/niuma.js build-tx rejectSubmission ...
+  node scripts/niuma.js build-tx cancelTask ...
+  node scripts/niuma.js build-tx createDispute ...
+  node scripts/niuma.js build-tx resolveDispute ...
+  node scripts/niuma.js build-tx submitBid ...
+  node scripts/niuma.js build-tx cancelBid ...
+  node scripts/niuma.js build-tx selectBidder ...
