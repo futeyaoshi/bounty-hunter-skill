@@ -770,6 +770,73 @@ const cmds = {
     console.log(JSON.stringify({ ...result, email: em }));
   },
 
+  async 'referral-info'(addr) {
+    // referral-info [address] — show referral stats, inviter, invitees, reward history
+    const p = new ethers.JsonRpcProvider(CONF.rpc);
+    const address = addr || (await cmds._signer()).address;
+    const ref = new ethers.Contract(CONF.contracts.referralSystem, [
+      'function inviters(address) view returns (address)',
+      'function getInvitees(address) view returns (address[])',
+      'function getInviteeCount(address) view returns (uint256)',
+      'function getRewardHistoryLength(address) view returns (uint256)',
+      'function rewardHistory(address,uint256) view returns (uint128 amount, uint64 taskId, uint64 timestamp, address token, bool employerSide)'
+    ], p);
+    const [inviter, invitees, rewardLen] = await Promise.all([
+      ref.inviters(address),
+      ref.getInvitees(address),
+      ref.getRewardHistoryLength(address)
+    ]);
+    // fetch reward history (last 20)
+    const rewards = [];
+    const start = Math.max(0, Number(rewardLen) - 20);
+    for (let i = start; i < Number(rewardLen); i++) {
+      try {
+        const r = await ref.rewardHistory(address, i);
+        const sym = r.token === ethers.ZeroAddress ? 'OKB' :
+          r.token.toLowerCase() === CONF.contracts.niumaToken.toLowerCase() ? 'NIUMA' : r.token.slice(0,10);
+        rewards.push({
+          taskId: r.taskId.toString(),
+          amount: ethers.formatEther(r.amount),
+          token: sym,
+          timestamp: new Date(Number(r.timestamp)*1000).toISOString(),
+          type: r.employerSide ? 'employer' : 'hunter'
+        });
+      } catch(e) {}
+      await new Promise(x=>setTimeout(x,300));
+    }
+    // sum totals
+    const totalByToken = {};
+    for (const r of rewards) {
+      totalByToken[r.token] = (totalByToken[r.token] || 0) + parseFloat(r.amount);
+    }
+    console.log(JSON.stringify({
+      address,
+      inviter: inviter === ethers.ZeroAddress ? null : inviter,
+      referralLink: 'https://task.niuma.works/referral?inviter=' + address,
+      inviteeCount: invitees.length,
+      invitees,
+      totalRewards: totalByToken,
+      rewardHistory: rewards
+    }, null, 2));
+  },
+
+  async 'bind-inviter'(inviterAddr) {
+    // bind-inviter <address> — bind inviter address (one-time, cannot change)
+    const signer = await cmds._signer();
+    const ref = new ethers.Contract(CONF.contracts.referralSystem, [
+      'function bindInviter(address inviter) external',
+      'function inviters(address) view returns (address)'
+    ], signer);
+    // check if already bound
+    const existing = await ref.inviters(signer.address);
+    if (existing !== ethers.ZeroAddress) {
+      console.error(JSON.stringify({ error: '已绑定邀请人，无法修改', currentInviter: existing }));
+      process.exit(1);
+    }
+    const result = await cmds._sendTx(ref, 'bindInviter', [inviterAddr]);
+    console.log(JSON.stringify({ ...result, inviter: inviterAddr }));
+  },
+
   async stake(amount) {
     // stake <amount> — deposit NIUMA to UserProfileCredit
     const signer = await cmds._signer();
@@ -935,6 +1002,7 @@ READ (no credentials needed):
 READ (requires NIUMA_WALLET_SECRET for own address):
   my-tasks                              Tasks I participated in
   my-created                            Tasks I created
+  referral-info [address]               Referral stats, invitees, reward history
 
 WRITE (requires NIUMA_WALLET_SECRET env var):
   approve <tokenAddr> <spender> <amount>   Approve ERC20 (auto-skips if enough)
@@ -950,6 +1018,7 @@ WRITE (requires NIUMA_WALLET_SECRET env var):
   bind-telegram <handle>                   Bind Telegram handle on-chain
   bind-twitter <handle>                    Bind Twitter handle on-chain
   bind-email <email>                       Bind email on-chain
+  bind-inviter <address>                   Bind inviter address (one-time only)
   stake <amount>                           Deposit NIUMA to UserProfileCredit
   unstake <amount>                         Withdraw unlocked NIUMA
 
