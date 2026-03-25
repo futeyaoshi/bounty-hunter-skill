@@ -123,6 +123,147 @@ const cmds = {
     console.log(JSON.stringify({ owner: ownerAddr, spender: CONF.contracts.core, token: sym, allowance: ethers.formatUnits(val, dec) }));
   },
 
+  // ── 写操作（需要 NIUMA_WALLET_SECRET）─────────────────────────────
+  async _signer() {
+    const pk = process.env.NIUMA_WALLET_SECRET;
+    if (!pk) throw new Error('NIUMA_WALLET_SECRET not set');
+    const p = new ethers.JsonRpcProvider(process.env.NIUMA_RPC || CONF.rpc, undefined, {staticNetwork: true, polling: false});
+    return new ethers.Wallet(pk, p);
+  },
+
+  async _sendTx(contract, method, args, extraOpts={}) {
+    const c = contract;
+    const signer = c.runner;
+    const p = signer.provider;
+    const gasEstimate = await c[method].estimateGas(...args, extraOpts).catch(() => 950000n);
+    const gasLimit = gasEstimate * 120n / 100n;
+    const feeData = await p.getFeeData();
+    const nonce = await p.getTransactionCount(signer.address);
+    const tx = await c[method](...args, { gasLimit, gasPrice: feeData.gasPrice, nonce, ...extraOpts });
+    process.stderr.write('tx sent: ' + tx.hash + '\n');
+    let receipt = null;
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      receipt = await p.getTransactionReceipt(tx.hash).catch(() => null);
+      if (receipt) break;
+    }
+    return { txHash: tx.hash, block: receipt?.blockNumber, status: receipt?.status === 1 ? 'success' : 'failed' };
+  },
+
+  async approve(tokenAddr, spender, amount) {
+    // approve <tokenAddress> <spender> <amount>
+    const signer = await cmds._signer();
+    const tok = new ethers.Contract(tokenAddr, ABIS.ERC20, signer);
+    // check current allowance
+    const current = await tok.allowance(signer.address, spender);
+    const amtWei = ethers.parseEther(amount.toString());
+    if (current >= amtWei) {
+      console.log(JSON.stringify({ already_approved: true, allowance: ethers.formatEther(current), spender }));
+      return;
+    }
+    const result = await cmds._sendTx(tok, 'approve', [spender, amtWei]);
+    console.log(JSON.stringify({ ...result, spender, amount }));
+  },
+
+  async create(jsonStr) {
+    const args = JSON.parse(jsonStr);
+    const signer = await cmds._signer();
+    const p = signer.provider;
+    const coreC = new ethers.Contract(CONF.contracts.core, ABIS.BountyPlatformCore, signer);
+    const niuma = new ethers.Contract(CONF.contracts.niumaToken, ABIS.ERC20, signer);
+
+    const bountyWei = ethers.parseEther(args.bountyPerUser.toString());
+    const maxP = BigInt(args.maxParticipants || 1);
+    const tokenAddr = args.tokenAddress || CONF.contracts.niumaToken;
+    const taskType = args.taskType || 0;
+    const totalBounty = taskType === 0 ? bountyWei * maxP : bountyWei;
+
+    // get chain timestamp
+    const block = await p.getBlock('latest');
+    const startTime = args.startTime || (block.timestamp + 120);
+    const endTime   = args.endTime   || (block.timestamp + 86400);
+
+    // check & approve allowance
+    if (tokenAddr !== ethers.ZeroAddress) {
+      const needed = totalBounty * 120n / 100n; // bounty + ~20% fee buffer
+      const allowance = await niuma.allowance(signer.address, CONF.contracts.core);
+      if (allowance < needed) {
+        process.stderr.write('approving NIUMA...\n');
+        const approveTx = await niuma.approve(CONF.contracts.core, needed * 2n);
+        await approveTx.wait();
+        process.stderr.write('approved: ' + approveTx.hash + '\n');
+      }
+    }
+
+    const txArgs = [
+      args.title, args.description || '', taskType,
+      bountyWei, maxP, startTime, endTime,
+      args.requirements || '', tokenAddr, BigInt(args.categoryId || 1)
+    ];
+    const result = await cmds._sendTx(coreC, 'createTask', txArgs,
+      tokenAddr === ethers.ZeroAddress ? { value: totalBounty } : {});
+    console.log(JSON.stringify({ ...result, title: args.title, bountyPerUser: args.bountyPerUser, startTime, endTime }));
+  },
+
+  async participate(taskId) {
+    const signer = await cmds._signer();
+    const coreC = new ethers.Contract(CONF.contracts.core, ABIS.BountyPlatformCore, signer);
+    const result = await cmds._sendTx(coreC, 'participateTask', [BigInt(taskId)]);
+    console.log(JSON.stringify({ ...result, taskId }));
+  },
+
+  async stake(amount) {
+    // stake <amount> — deposit NIUMA to UserProfileCredit
+    const signer = await cmds._signer();
+    const upc = new ethers.Contract(CONF.contracts.userProfileCredit, [
+      'function stakeHunter(uint256) external',
+      'function hunterStake(address) view returns (uint256)',
+      'function lockedStake(address) view returns (uint256)'
+    ], signer);
+    const niuma = new ethers.Contract(CONF.contracts.niumaToken, ABIS.ERC20, signer);
+    const amtWei = ethers.parseEther(amount.toString());
+    // approve first
+    const allowance = await niuma.allowance(signer.address, CONF.contracts.userProfileCredit);
+    if (allowance < amtWei) {
+      process.stderr.write('approving NIUMA to userProfileCredit...\n');
+      const tx = await niuma.approve(CONF.contracts.userProfileCredit, amtWei * 2n);
+      await tx.wait();
+      process.stderr.write('approved: ' + tx.hash + '\n');
+    }
+    const result = await cmds._sendTx(upc, 'stakeHunter', [amtWei]);
+    const [total, locked] = await Promise.all([upc.hunterStake(signer.address), upc.lockedStake(signer.address)]);
+    console.log(JSON.stringify({ ...result, staked: amount, totalStake: ethers.formatEther(total), lockedStake: ethers.formatEther(locked), available: ethers.formatEther(total - locked) }));
+  },
+
+  async unstake(amount) {
+    // unstake <amount> — withdraw unlocked NIUMA from UserProfileCredit
+    const signer = await cmds._signer();
+    const upc = new ethers.Contract(CONF.contracts.userProfileCredit, [
+      'function withdrawStake(uint256) external',
+      'function hunterStake(address) view returns (uint256)',
+      'function lockedStake(address) view returns (uint256)'
+    ], signer);
+    const [total, locked] = await Promise.all([upc.hunterStake(signer.address), upc.lockedStake(signer.address)]);
+    const available = total - locked;
+    const amtWei = ethers.parseEther(amount.toString());
+    if (available < amtWei) {
+      console.log(JSON.stringify({ error: 'insufficient unlocked stake', available: ethers.formatEther(available), locked: ethers.formatEther(locked) }));
+      return;
+    }
+    const result = await cmds._sendTx(upc, 'withdrawStake', [amtWei]);
+    console.log(JSON.stringify({ ...result, withdrawn: amount }));
+  },
+
+  async 'stake-info'(addr) {
+    const address = addr || (await cmds._signer()).address;
+    const upc = new ethers.Contract(CONF.contracts.userProfileCredit, [
+      'function hunterStake(address) view returns (uint256)',
+      'function lockedStake(address) view returns (uint256)'
+    ], provider());
+    const [total, locked] = await Promise.all([upc.hunterStake(address), upc.lockedStake(address)]);
+    console.log(JSON.stringify({ address, totalStake: ethers.formatEther(total), lockedStake: ethers.formatEther(locked), available: ethers.formatEther(total - locked) }));
+  },
+
   async 'build-tx'(cmd, jsonArgs) {
     const args = JSON.parse(jsonArgs);
     const p = provider();
@@ -210,6 +351,14 @@ READ (no credentials needed):
   bids <taskId>                         Bids for a task
   balance <address> [tokenAddress]      Wallet balance
   allowance <address> <tokenAddress>    ERC20 allowance
+  stake-info [address]                  NIUMA stake/locked balance
+
+WRITE (requires NIUMA_WALLET_SECRET env var):
+  approve <tokenAddr> <spender> <amount>  Approve ERC20 (auto-skips if enough)
+  create '<json>'                         Create task (auto-approves if needed)
+  participate <taskId>                    Join a task
+  stake <amount>                          Deposit NIUMA to UserProfileCredit
+  unstake <amount>                        Withdraw unlocked NIUMA
 
 BUILD UNSIGNED TX (for wallet plugin signing):
   build-tx <command> '<json>'
