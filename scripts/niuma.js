@@ -48,6 +48,62 @@ const cmds = {
     console.log(JSON.stringify({ activeTasks: c.toString() }));
   },
 
+  async categories() {
+    // categories — list all task categories
+    const p = new ethers.JsonRpcProvider(CONF.rpc);
+    const catMgr = new ethers.Contract(CONF.contracts.categoryManager, [
+      'function categoryCount() view returns (uint256)',
+      'function categories(uint256) view returns (uint256 id, string name, string description, string icon, uint256 maxActiveTasks, uint256 maxParticipants, uint256 maxBidders, uint256 sortOrder, bool enabled, uint256 activeTasks)'
+    ], p);
+    const count = await catMgr.categoryCount();
+    const result = [];
+    for (let i = 1; i <= Number(count); i++) {
+      try {
+        const c = await catMgr.categories(i);
+        if (c.id.toString() !== '0') result.push({
+          id: c.id.toString(),
+          name: c.name,
+          description: c.description,
+          enabled: c.enabled,
+          maxParticipants: c.maxParticipants.toString(),
+          maxBidders: c.maxBidders.toString(),
+          maxActiveTasks: c.maxActiveTasks.toString(),
+          activeTasks: c.activeTasks.toString()
+        });
+      } catch(e) {}
+      await new Promise(r=>setTimeout(r,300));
+    }
+    console.log(JSON.stringify(result, null, 2));
+  },
+
+  async tokens() {
+    // tokens — list all supported tokens
+    const p = new ethers.JsonRpcProvider(CONF.rpc);
+    const tmgr = new ethers.Contract(CONF.contracts.tokenManager, [
+      'function getTokenListLength() view returns (uint256)',
+      'function tokenList(uint256) view returns (address)',
+      'function tokens(address) view returns (address tokenAddress, string symbol, uint256 decimals, bool enabled, uint256 baseFee, uint256 communityFeePercentage, uint256 developerFeePercentage, uint256 referralFeePercentage, uint256 niumaRate, uint256 minAmount, uint256 maxAmount, uint256 sortOrder)'
+    ], p);
+    const len = await tmgr.getTokenListLength();
+    const result = [];
+    for (let i = 0; i < Number(len); i++) {
+      const addr = await tmgr.tokenList(i);
+      try {
+        const t = await tmgr.tokens(addr);
+        if (t.enabled) result.push({
+          address: addr,
+          symbol: t.symbol,
+          decimals: t.decimals.toString(),
+          enabled: t.enabled,
+          minAmount: ethers.formatUnits(t.minAmount, t.decimals),
+          maxAmount: ethers.formatUnits(t.maxAmount, t.decimals)
+        });
+      } catch(e) {}
+      await new Promise(r=>setTimeout(r,300));
+    }
+    console.log(JSON.stringify(result, null, 2));
+  },
+
   async task(id) {
     const t = await core().getTaskInfo(id);
     console.log(JSON.stringify(fmt(t), null, 2));
@@ -750,6 +806,8 @@ Read-only queries + unsigned tx builder for wallet plugins.
 READ (no credentials needed):
   contracts                             All contract addresses
   count                                 Active task count
+  categories                            List all task categories (id, name, limits)
+  tokens                                List all supported tokens
   task <id>                             Task details
   status <id>                           Task status
   list [offset] [limit]                 Active tasks
@@ -757,7 +815,7 @@ READ (no credentials needed):
   paginated [offset] [limit]            All tasks
   by-status <0-7> [offset] [limit]      Tasks by status
   user-tasks <address>                  Tasks by user
-  bids <taskId>                         Bids for a task
+  bids <taskId>                         Bids for a bidding task
   balance <address> [tokenAddress]      Wallet balance
   allowance <address> <tokenAddress>    ERC20 allowance
   stake-info [address]                  NIUMA stake/locked balance

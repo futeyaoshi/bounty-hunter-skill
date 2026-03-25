@@ -1,91 +1,187 @@
-# niuma-bounty
+# niuma-bounty Skill
 
-Niuma 赏金平台 skill — 操作 task.niuma.works（XLayer 测试网）。
+Niuma 赏金平台（task.niuma.works）的完整操作技能，支持普通任务和竞标任务的全流程。
 
-## 环境
+## 网络信息
 
-```bash
-cd SKILL_DIR && npm install
-# 写操作需设置环境变量
-export NIUMA_WALLET_SECRET=<私钥>
-```
+- **链**: XLayer Testnet（chainId: 1952）
+- **RPC**: `https://xlayertestrpc.okx.com`（公共节点，频繁限速，每次操作之间建议间隔 3-5 秒）
+- **Gas 代币**: OKB
+- **脚本路径**: `scripts/niuma.js`
+- **环境变量**: `NIUMA_WALLET_SECRET=<私钥>` 用于签名交易
 
-## 查询命令
-
-```bash
-node SKILL_DIR/scripts/niuma.js count                          # 活跃任务数
-node SKILL_DIR/scripts/niuma.js list [offset] [limit]          # 活跃任务列表
-node SKILL_DIR/scripts/niuma.js task <id>                      # 任务详情
-node SKILL_DIR/scripts/niuma.js user-tasks <address>           # 用户任务
-node SKILL_DIR/scripts/niuma.js balance <address> [token]      # 余额
-node SKILL_DIR/scripts/niuma.js stake-info [address]           # 押金状态
-node SKILL_DIR/scripts/niuma.js bids <taskId>                  # 竞标列表
-```
-
-## 发任务
+## 快速开始
 
 ```bash
-# 第一步：预检（不发交易，确认条件）
-node SKILL_DIR/scripts/niuma.js check-create '<json>'
+cd /path/to/niuma-bounty
 
-# 第二步：发任务（内置检查，不过直接报错）
-node SKILL_DIR/scripts/niuma.js create '<json>'
+# 查看所有任务分类（发任务前必须查，categoryId 必须有效且 enabled=true）
+node scripts/niuma.js categories
+
+# 查看支持的 token（发任务前查，tokenAddress 必须是 enabled 的 token）
+node scripts/niuma.js tokens
+
+# 查看活跃任务列表
+node scripts/niuma.js list
+
+# 接单前先检查资格
+node scripts/niuma.js check-participate <taskId>
 ```
 
-参数说明：
+## 所有命令
+
+### 只读命令（无需私钥）
+
+| 命令 | 说明 |
+|------|------|
+| `contracts` | 所有合约地址 |
+| `count` | 活跃任务数量 |
+| `categories` | 所有任务分类（含 id、名称、限制） |
+| `tokens` | 所有支持的代币 |
+| `task <id>` | 任务详情 |
+| `status <id>` | 任务状态 |
+| `list [offset] [limit]` | 活跃任务列表 |
+| `pending` | 审核中的任务 |
+| `by-status <0-7>` | 按状态查询 |
+| `user-tasks <address>` | 某地址的任务 |
+| `bids <taskId>` | 竞标任务的所有投标 |
+| `balance <address> [token]` | 余额查询 |
+| `stake-info [address]` | 押金信息 |
+| `check-participate <taskId> [addr]` | 接单前置检查 |
+| `check-create '<json>'` | 发任务前置检查 |
+
+### 写入命令（需要 NIUMA_WALLET_SECRET）
+
+#### 普通任务流程
+```bash
+# 1. 发布任务
+NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js create '{"title":"任务名","description":"描述","bountyPerUser":"100","maxParticipants":5,"categoryId":1,"requirements":"截图证明","tokenAddress":"0x49ABB6BFFEce92EAd9E71BCA930Ac877ef71939D"}'
+
+# 2. 接单（hunter）
+NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js participate <taskId>
+
+# 3. 提交工作证明（hunter）
+NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js submit <taskId> <proofHash> '<metadata_json>'
+
+# 4a. 审核通过（creator）
+NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js approve-submission <taskId> <hunterAddress>
+
+# 4b. 审核拒绝（creator）
+NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js reject-submission <taskId> <hunterAddress> '拒绝原因'
+
+# 5. 申请裁决（hunter，被拒绝后）
+NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js create-dispute <taskId> '理由' <evidenceHash>
+```
+
+#### 竞标任务流程
+```bash
+# 1. 发布竞标任务（taskType=1，注意：maxParticipants 必须传 1）
+NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js create '{"title":"任务名","description":"描述","taskType":1,"bountyPerUser":"100","maxParticipants":1,"categoryId":1,"requirements":"提交方案"}'
+
+# 2. 投标（hunter）—— 需等任务 startTime 过后才能投标
+NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js submit-bid <taskId> <bidAmount> '<proposal>' '<contactInfo>'
+
+# 3. 查看所有投标
+node scripts/niuma.js bids <taskId>
+
+# 4. 取消投标（hunter，未被选中前可取消）
+NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js cancel-bid <taskId>
+
+# 5. 选中投标人（creator）
+NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js select-bidder <taskId> <bidderAddress>
+
+# 6. 提交工作 + 审核（同普通任务）
+```
+
+#### 押金管理
+```bash
+# 充值押金（接单前必须有足够押金）
+NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js stake <amount>
+
+# 提取未锁定押金
+NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js unstake <amount>
+
+# 查看押金状态
+node scripts/niuma.js stake-info <address>
+```
+
+## 任务状态码
+
+| 状态码 | 名称 | 说明 |
+|--------|------|------|
+| 0 | Pending | 等待平台审核（autoApprove=false 时） |
+| 1 | Open | 可接单 |
+| 2 | InProgress | 竞标任务已选中 hunter |
+| 3 | UnderReview | 审核中（竞标任务提交后） |
+| 4 | Completed | 已完成 |
+| 5 | Disputed | 裁决中 |
+| 6 | Cancelled | 已取消 |
+| 7 | Rejected | 已拒绝 |
+
+## 重要注意事项
+
+### ⚠️ RPC 限速
+- XLayer 测试网 RPC 每分钟请求数有限，频繁操作容易触发 429
+- 连续操作之间建议 `sleep 5` 间隔
+- `getLogs` 最多查 100 个区块范围
+- 出现 `exceeded maximum retry limit` 时等待 15-30 秒重试
+
+### ⚠️ Gas 问题
+- 所有写操作先 `estimateGas`，加 130% buffer 后发交易
+- `createTask` 实际消耗约 750k-800k gas，必须用 estimateGas
+- estimateGas 失败 = 合约会 revert，会明确报出 revert 原因
+- 不要用固定 gasLimit，复杂交易（含 PriceOracle 调用）容易 out of gas
+
+### ⚠️ 发任务注意
+- `categoryId` 必须先用 `categories` 命令查询有效值
+- `tokenAddress` 必须先用 `tokens` 命令查询支持的 token
+- `startTime` 默认为 now+120 秒，竞标任务在 startTime 前不能投标
+- `endTime` 默认为 now+86400（1天），最长不超过 30 天
+- 创建任务会自动 approve token 转账
+- 测试网 `autoApprove=false`，任务创建后可能是 Pending 状态需要管理员审核
+
+### ⚠️ 接单注意
+- 接单前必须有足够押金（`stake` 命令充值）
+- 每次接单后有 **1 小时冷却时间**（taskCooldown=3600s）
+- 信用分需 >= 60（minCreditScore），新地址默认满足
+- 用 `check-participate` 命令预检，会明确显示失败原因
+
+### ⚠️ 竞标任务特殊规则
+- `maxParticipants` 必须传 1（竞标任务固定单人）
+- 投标金额必须 >= 赏金的 50%（minBidPercent=50）
+- 投标金额 <= 赏金总额
+- 选中投标人后，其他投标者押金自动退还
+- 最终结算金额是投标价（bidAmount），不是原始 bountyPerUser
+
+### ⚠️ 裁决流程
+- 只有 hunter 在被拒绝后才能发起裁决（`create-dispute`）
+- 裁决后等待平台仲裁员调用 `resolveDispute`
+- 裁决期间押金锁定，不能提取
+
+## 合约地址（XLayer Testnet）
+
 ```json
 {
-  "title": "任务标题",
-  "description": "描述",
-  "bountyPerUser": "100",
-  "maxParticipants": 5,
-  "categoryId": 1,
-  "requirements": "要求说明"
+  "core": "0x3E7765a23AEE412bfc36760Ec8Abb495fb5c6370",
+  "bidding": "0xC917e6426608E1A7d0267b9346C9c70F97Cdb65B",
+  "helper": "0xA7e63aC45FAd693f69be23F2B2072CBA4345881e",
+  "userProfileCredit": "0x6CcDefaa116E17f19AC3A28d24f4b0C4a83C7B45",
+  "categoryManager": "0xA63C1aBAe66a1687b80Da9573203DDcB9B19D47C",
+  "tokenManager": "0xd1915fAdB020B6E5410fA480F415e287b32B4612",
+  "niumaToken": "0x49ABB6BFFEce92EAd9E71BCA930Ac877ef71939D"
 }
 ```
 
-> startTime/endTime 不填默认：2分钟后开始，24小时后截止。
-> bountyPerUser 限额从链上 tokenManager 实时读取，check-create 会自动验证。
-> allowance 不足时自动 approve，无需手动处理。
+## build-tx（钱包插件签名模式）
 
-## 接单
+给不想在服务端暴露私钥的场景用，返回未签名交易让前端钱包签名：
 
 ```bash
-# 第一步：预检（可选，内置检查已覆盖）
-node SKILL_DIR/scripts/niuma.js check-participate <taskId>
+node scripts/niuma.js build-tx <command> '<json>'
 
-# 第二步：接单
-node SKILL_DIR/scripts/niuma.js participate <taskId>
+# 支持的命令：
+# createTask participateTask submitTask approveSubmission
+# batchApprove rejectSubmission cancelTask
+# createDispute resolveDispute
+# submitBid cancelBid selectBidder approveToken
 ```
-
-> 押金不足时先充值：`node SKILL_DIR/scripts/niuma.js stake <amount>`
-
-## 押金管理
-
-```bash
-node SKILL_DIR/scripts/niuma.js stake <amount>     # 充值押金
-node SKILL_DIR/scripts/niuma.js unstake <amount>   # 提取押金
-```
-
-## 其他写操作
-
-```bash
-# 提交工作
-node SKILL_DIR/scripts/niuma.js build-tx submitTask '{"taskId":1,"proofHash":"...","metadata":""}'
-
-# 审核通过
-node SKILL_DIR/scripts/niuma.js build-tx approveSubmission '{"taskId":1,"participant":"0x..."}'
-
-# 批量审核
-node SKILL_DIR/scripts/niuma.js build-tx batchApprove '{"taskId":1,"participants":["0x...","0x..."]}'
-
-# 取消任务
-node SKILL_DIR/scripts/niuma.js build-tx cancelTask '{"taskId":1}'
-```
-
-> build-tx 返回未签名交易，配合钱包 skill 签名广播。
-
-## 网络
-
-- 链：XLayer 测试网，Chain ID: 1952
-- 浏览器：https://www.oklink.com/xlayer-test
