@@ -310,6 +310,44 @@ const cmds = {
       fail('stake_check', '押金检查失败: ' + e.message);
     }
 
+    // 7. 合约级资格检查（链上综合验证）
+    try {
+      const abiCoder = new ethers.AbiCoder();
+      const upcAddr = CONF.contracts.userProfileCredit;
+      // 0x536cf22e: 合约内部资格验证函数
+      const eligData = '0x536cf22e' + abiCoder.encode(['address'], [signerAddress]).slice(2);
+      const eligResult = await p.call({ to: upcAddr, data: eligData });
+      const eligible = abiCoder.decode(['bool'], eligResult)[0];
+      if (!eligible) {
+        // 进一步查原因：冷却时间 or activeCount
+        const cooldownData = '0x76f79b10';
+        const lastTimeData = '0xcf1513fc' + abiCoder.encode(['address'], [signerAddress]).slice(2);
+        const [cooldownRes, lastTimeRes] = await Promise.all([
+          p.call({ to: upcAddr, data: cooldownData }).catch(() => null),
+          p.call({ to: upcAddr, data: lastTimeData }).catch(() => null),
+        ]);
+        const block = await p.getBlock('latest');
+        let reason = '合约资格验证未通过';
+        if (cooldownRes && lastTimeRes) {
+          const cooldown = abiCoder.decode(['uint256'], cooldownRes)[0];
+          const lastTime = abiCoder.decode(['uint256'], lastTimeRes)[0];
+          const elapsed = BigInt(block.timestamp) - lastTime;
+          if (elapsed < cooldown) {
+            const wait = cooldown - elapsed;
+            reason = `接单冷却中，还需等待 ${wait}秒（冷却时间 ${cooldown}秒）`;
+          } else {
+            reason = `合约资格验证未通过（activeCount 或其他限制），请联系平台管理员`;
+          }
+        }
+        fail('eligibility', reason);
+      } else {
+        ok('eligibility', '合约资格验证通过');
+      }
+    } catch(e) {
+      // 如果查不到，跳过（不阻塞）
+      ok('eligibility', '资格验证跳过（查询失败）');
+    }
+
     const pass = checks.every(c => c.pass);
     return { pass, checks };
   },
