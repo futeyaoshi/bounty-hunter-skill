@@ -4,22 +4,22 @@
   "rpc": "https://xlayertestrpc.okx.com",
   "explorer": "https://www.oklink.com/xlayer-test",
   "contracts": {
-    "registry": "0x5d48C3c8F2D8854d444C9E94e09696c28748cfe8",
-    "accessControl": "0x679714819CE9Df0734c1f44304CB4aD536e23652",
-    "tokenManager": "0xd1915fAdB020B6E5410fA480F415e287b32B4612",
-    "userProfileCredit": "0x6CcDefaa116E17f19AC3A28d24f4b0C4a83C7B45",
-    "categoryManager": "0xA63C1aBAe66a1687b80Da9573203DDcB9B19D47C",
-    "referralSystem": "0x775f51F3A197793041f0C57EdC47Ee17aB6F48fF",
-    "core": "0x3E7765a23AEE412bfc36760Ec8Abb495fb5c6370",
-    "bidding": "0xC917e6426608E1A7d0267b9346C9c70F97Cdb65B",
-    "helper": "0xA7e63aC45FAd693f69be23F2B2072CBA4345881e",
-    "priceOracle": "0xF11Cb1f71c57B96572e38E7245B3F1928a7666a1",
-    "queryHelper": "0x45f390AC7459ab31a23f14513dEbE9a59Dc06826",
-    "niumaToken": "0x49ABB6BFFEce92EAd9E71BCA930Ac877ef71939D"
+    "registry": "0x283F7591963E6C5C97a0153b5803928A056FaA87",
+    "accessControl": "0x3E2B82827e6ECf3E49EcD13e83ce38C554624C97",
+    "tokenManager": "0x59383270f38C522B974F04162C04bA9277Faa52e",
+    "userProfileCredit": "0x6bB86eFf5A0DD1Bac148DB9925b7733C1c0B88d4",
+    "categoryManager": "0x90dC091D683ffBDEC6c807BBb780d1932F22fD11",
+    "referralSystem": "0xa17b4E146C6B0c56eA5BA0c07ed40A262362d7d0",
+    "core": "0xe3647A175e78bE6adFd7304f6C46e3615aCDcF96",
+    "bidding": "0x023eE5F84C044E3f6D147867b85f0E43f33ef0d9",
+    "helper": "0xcc22708236583f0D304c81fa626eD976294c5A89",
+    "priceOracle": "0x4C4D550Fd8b82A02e1B9d63effc97895099004f7",
+    "queryHelper": "0xE7D9d979Ebf376AaD774768Ae88FFE72863B2117",
+    "niumaToken": "0x77F2A7eF998b7814b1739F7Cc8158F81d5c11b59"
   },
   "tokens": {
     "NIUMA": {
-      "address": "0x49ABB6BFFEce92EAd9E71BCA930Ac877ef71939D",
+      "address": "0x77F2A7eF998b7814b1739F7Cc8158F81d5c11b59",
       "decimals": 18,
       "symbol": "NIUMA"
     },
