@@ -83,6 +83,21 @@ NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js participate <taskId>
 # 3. 提交工作证明（hunter）
 NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js submit <taskId> <proofHash> '<metadata_json>'
 
+# proofHash 说明：
+# - 文字凭证：直接写描述内容
+# - 单张图片：填图片 URL，如 https://imgur.com/xxx.png
+# - 多张图片：多个 URL 以英文逗号分隔，如 https://img1.png,https://img2.png
+# - IPFS：填 IPFS Hash，如 QmXxx...
+#
+# metadata_json 说明（可选）：
+# {"note":"补充说明", "images":["https://img1.png","https://img2.png"]}
+#
+# ⚠️ Agent 交互规范：
+# 当用户说「提交凭证」时，Agent 必须先收集以下信息再执行：
+# 1. 凭证内容（文字描述 或 图片URL，多张以逗号分隔）
+# 2. 补充说明（可选）
+# 示例提问：「请提供凭证内容，可以是文字描述或图片链接（多张图片请用逗号分隔）」
+
 # 4a. 审核通过（creator）
 NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js approve-submission <taskId> <hunterAddress>
 

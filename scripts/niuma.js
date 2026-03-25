@@ -577,6 +577,24 @@ const cmds = {
 
   async submit(taskId, proofHash, metadataStr) {
     // submit <taskId> <proofHash> [metadata]
+    // proofHash: 文字凭证内容 或 图片URL（多张以逗号分隔）
+    // metadata: JSON字符串，如 {"note":"说明","images":["url1","url2"]}
+    if (!taskId) {
+      console.error(JSON.stringify({ error: '请提供任务ID', usage: 'submit <taskId> <proofHash> [metadata]' }));
+      process.exit(1);
+    }
+    if (!proofHash) {
+      console.error(JSON.stringify({
+        error: '请提供凭证内容',
+        hint: '凭证可以是：文字描述、图片URL（多张以英文逗号分隔）、IPFS Hash等',
+        examples: [
+          'submit 6 "https://imgur.com/xxx.png"',
+          'submit 6 "https://img1.png,https://img2.png" \'{"note":"任务说明"}\'',
+          'submit 6 QmIPFSHash \'{"note":"已完成","images":["https://img.png"]}\''
+        ]
+      }));
+      process.exit(1);
+    }
     const signer = await cmds._signer();
     const coreC = new ethers.Contract(CONF.contracts.core, ABIS.BountyPlatformCore, signer);
     const metadata = metadataStr || '';
