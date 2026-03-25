@@ -543,7 +543,7 @@ const cmds = {
       const allowance = await niuma.allowance(signer.address, CONF.contracts.core);
       if (allowance < needed) {
         process.stderr.write('approving NIUMA...\n');
-        const approveTx = await niuma.approve(CONF.contracts.core, needed * 2n);
+        const approveTx = await niuma.approve(CONF.contracts.core, ethers.MaxUint256);
         await approveTx.wait();
         process.stderr.write('approved: ' + approveTx.hash + '\n');
       }
@@ -939,7 +939,7 @@ const cmds = {
     const allowance = await niuma.allowance(signer.address, CONF.contracts.userProfileCredit);
     if (allowance < amtWei) {
       process.stderr.write('approving NIUMA to userProfileCredit...\n');
-      const tx = await niuma.approve(CONF.contracts.userProfileCredit, amtWei * 2n);
+      const tx = await niuma.approve(CONF.contracts.userProfileCredit, ethers.MaxUint256);
       await tx.wait();
       process.stderr.write('approved: ' + tx.hash + '\n');
     }
