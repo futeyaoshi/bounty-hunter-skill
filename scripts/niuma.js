@@ -310,43 +310,62 @@ const cmds = {
       fail('stake_check', '押金检查失败: ' + e.message);
     }
 
-    // 7. 合约级资格检查（链上综合验证）
+    // 7. 合约级资格检查（canAcceptTask）
     try {
       const abiCoder = new ethers.AbiCoder();
       const upcAddr = CONF.contracts.userProfileCredit;
-      // 0x536cf22e: 合约内部资格验证函数
-      const eligData = '0x536cf22e' + abiCoder.encode(['address'], [signerAddress]).slice(2);
+      // 0xb44d0157 = canAcceptTask(address,uint256,address)
+      const tokenAddr2 = task.tokenAddress === ethers.ZeroAddress ? CONF.contracts.niumaToken : task.tokenAddress;
+      const eligData = '0xb44d0157' + abiCoder.encode(
+        ['address','uint256','address'],
+        [signerAddress, task.bountyPerUser, tokenAddr2]
+      ).slice(2);
       const eligResult = await p.call({ to: upcAddr, data: eligData });
       const eligible = abiCoder.decode(['bool'], eligResult)[0];
       if (!eligible) {
-        // 进一步查原因：冷却时间 or activeCount
-        const cooldownData = '0x2bf403a3'; // participationCooldown
+        // 查冷却时间
         const lastTimeData = '0xcf1513fc' + abiCoder.encode(['address'], [signerAddress]).slice(2);
-        const [cooldownRes, lastTimeRes] = await Promise.all([
-          p.call({ to: upcAddr, data: cooldownData }).catch(() => null),
+        const cooldownData = '0x2bf403a3';
+        const [lastTimeRes, cooldownRes] = await Promise.all([
           p.call({ to: upcAddr, data: lastTimeData }).catch(() => null),
+          p.call({ to: upcAddr, data: cooldownData }).catch(() => null),
         ]);
         const block = await p.getBlock('latest');
-        let reason = '合约资格验证未通过';
-        if (cooldownRes && lastTimeRes) {
-          const cooldown = abiCoder.decode(['uint256'], cooldownRes)[0];
+        let reason = 'canAcceptTask 返回 false';
+        if (lastTimeRes && cooldownRes) {
           const lastTime = abiCoder.decode(['uint256'], lastTimeRes)[0];
+          const cooldown = abiCoder.decode(['uint256'], cooldownRes)[0];
           const elapsed = BigInt(block.timestamp) - lastTime;
           if (lastTime > 0n && elapsed < cooldown) {
             const wait = cooldown - elapsed;
             const mins = Math.ceil(Number(wait) / 60);
             reason = `接单冷却中，还需等待 ${wait}秒（约${mins}分钟），上次接单: ${new Date(Number(lastTime)*1000).toISOString()}`;
           } else {
-            reason = `合约资格验证未通过（activeCount 或其他限制），请联系平台管理员`;
+            // 查信用分
+            const credData = '0xfe5ff468' + abiCoder.encode(['address'], [signerAddress]).slice(2);
+            const minScoreData = '0x76f79b10';
+            const [credRes, minScoreRes] = await Promise.all([
+              p.call({ to: upcAddr, data: credData }).catch(() => null),
+              p.call({ to: upcAddr, data: minScoreData }).catch(() => null),
+            ]);
+            if (credRes && minScoreRes) {
+              const cred = abiCoder.decode(['uint256','uint256','uint256','uint256','bool'], credRes);
+              const minScore = abiCoder.decode(['uint256'], minScoreRes)[0];
+              const hunterScore = cred[0];
+              if (hunterScore < minScore) {
+                reason = `信用分不足：当前 ${hunterScore}，最低要求 ${minScore}`;
+              } else {
+                reason = `押金不足或已被封禁，请检查钱包状态`;
+              }
+            }
           }
         }
         fail('eligibility', reason);
       } else {
-        ok('eligibility', '合约资格验证通过');
+        ok('eligibility', 'canAcceptTask 验证通过');
       }
     } catch(e) {
-      // 如果查不到，跳过（不阻塞）
-      ok('eligibility', '资格验证跳过（查询失败）');
+      ok('eligibility', '资格验证跳过（查询失败: ' + e.message.slice(0,50) + '）');
     }
 
     const pass = checks.every(c => c.pass);
