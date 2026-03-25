@@ -104,6 +104,13 @@ NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js approve-submission <taskId> <hunt
 # 4b. 审核拒绝（creator）
 NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js reject-submission <taskId> <hunterAddress> '拒绝原因'
 
+# ⚠️ Agent 交互规范（雇主审核）：
+# 当用户说「审核」或「查看提交」时，Agent 应：
+# 1. 先用 task-participants <taskId> 展示所有参与者的提交内容
+# 2. 询问用户：「请问您要审核通过还是拒绝？如果拒绝请提供拒绝原因」
+# 3. 根据用户选择执行 approve-submission 或 reject-submission
+# 注意：approve 后赏金立即打给 hunter，reject 后 hunter 可发起裁决，操作不可逆
+
 # 5. 申请裁决（hunter，被拒绝后）
 NIUMA_WALLET_SECRET=<pk> node scripts/niuma.js create-dispute <taskId> '理由' <evidenceHash>
 ```

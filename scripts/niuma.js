@@ -604,18 +604,43 @@ const cmds = {
 
   async approve_submission(taskId, participant) {
     // approve-submission <taskId> <participantAddress>
+    // ⚠️ 审核通过后赏金立即转账给 hunter，不可撤销
+    if (!taskId || !participant) {
+      console.error(JSON.stringify({
+        error: '参数缺失',
+        usage: 'approve-submission <taskId> <participantAddress>',
+        warning: '审核通过后赏金立即转账，不可撤销'
+      }));
+      process.exit(1);
+    }
     const signer = await cmds._signer();
     const coreC = new ethers.Contract(CONF.contracts.core, ABIS.BountyPlatformCore, signer);
     const result = await cmds._sendTx(coreC, 'approveSubmission', [BigInt(taskId), participant]);
-    console.log(JSON.stringify({ ...result, taskId, participant }));
+    console.log(JSON.stringify({ ...result, taskId, participant, action: 'approved', note: '赏金已转账给 hunter' }));
   },
 
   async reject_submission(taskId, participant, reason) {
     // reject-submission <taskId> <participantAddress> <reason>
+    // ⚠️ 拒绝后 hunter 可发起链上裁决
+    if (!taskId || !participant) {
+      console.error(JSON.stringify({
+        error: '参数缺失',
+        usage: 'reject-submission <taskId> <participantAddress> <reason>',
+        warning: '拒绝后 hunter 可发起链上裁决'
+      }));
+      process.exit(1);
+    }
+    if (!reason) {
+      console.error(JSON.stringify({
+        error: '请提供拒绝原因',
+        hint: '拒绝原因会记录在链上，hunter 可以看到'
+      }));
+      process.exit(1);
+    }
     const signer = await cmds._signer();
     const coreC = new ethers.Contract(CONF.contracts.core, ABIS.BountyPlatformCore, signer);
-    const result = await cmds._sendTx(coreC, 'rejectSubmission', [BigInt(taskId), participant, reason || '']);
-    console.log(JSON.stringify({ ...result, taskId, participant }));
+    const result = await cmds._sendTx(coreC, 'rejectSubmission', [BigInt(taskId), participant, reason]);
+    console.log(JSON.stringify({ ...result, taskId, participant, action: 'rejected', reason, note: 'hunter 可发起裁决' }));
   },
 
   async create_dispute(taskId, reason, evidenceHash) {
