@@ -614,6 +614,12 @@ const cmds = {
       case 'cancelTask':
         to = CONF.contracts.core;
         data = coreIface.encodeFunctionData('cancelTask', [args.taskId]); break;
+      case 'createDispute':
+        to = CONF.contracts.core;
+        data = coreIface.encodeFunctionData('createDispute', [args.taskId, args.reason||'', args.evidenceHash||'']); break;
+      case 'resolveDispute':
+        to = CONF.contracts.core;
+        data = coreIface.encodeFunctionData('resolveDispute', [args.taskId, args.disputeIndex||0, args.hunterWins===true]); break;
       case 'submitBid':
         to = CONF.contracts.bidding;
         data = biddingIface.encodeFunctionData('submitBid', [args.taskId, ethers.parseEther(args.bidAmount.toString()), args.proposal||'', args.contactInfo||'']); break;
@@ -675,6 +681,7 @@ BUILD UNSIGNED TX (for wallet plugin signing):
   build-tx <command> '<json>'
   Commands: createTask participateTask submitTask approveSubmission
             batchApprove rejectSubmission cancelTask
+            createDispute resolveDispute
             submitBid cancelBid selectBidder approveToken
 
 ENV:
