@@ -552,6 +552,59 @@ const cmds = {
     console.log(JSON.stringify({ ...result, taskId }));
   },
 
+  async submit_bid(taskId, bidAmount, proposal, contactInfo) {
+    // submit-bid <taskId> <bidAmount> <proposal> <contactInfo>
+    const signer = await cmds._signer();
+    const biddingC = new ethers.Contract(CONF.contracts.bidding, ABIS.BountyPlatformBidding, signer);
+    const bidWei = ethers.parseEther(bidAmount.toString());
+    const result = await cmds._sendTx(biddingC, 'submitBid', [BigInt(taskId), bidWei, proposal || '', contactInfo || '']);
+    console.log(JSON.stringify({ ...result, taskId, bidAmount }));
+  },
+
+  async cancel_bid(taskId) {
+    // cancel-bid <taskId>
+    const signer = await cmds._signer();
+    const biddingC = new ethers.Contract(CONF.contracts.bidding, ABIS.BountyPlatformBidding, signer);
+    const result = await cmds._sendTx(biddingC, 'cancelBid', [BigInt(taskId)]);
+    console.log(JSON.stringify({ ...result, taskId }));
+  },
+
+  async select_bidder(taskId, bidderAddress) {
+    // select-bidder <taskId> <bidderAddress>
+    const signer = await cmds._signer();
+    const biddingC = new ethers.Contract(CONF.contracts.bidding, ABIS.BountyPlatformBidding, signer);
+    const result = await cmds._sendTx(biddingC, 'selectBidder', [BigInt(taskId), bidderAddress]);
+    console.log(JSON.stringify({ ...result, taskId, bidderAddress }));
+  },
+
+  async bids(taskId) {
+    // bids <taskId> — list all bids for a bidding task
+    const p = new ethers.JsonRpcProvider(CONF.rpc);
+    const biddingC = new ethers.Contract(CONF.contracts.bidding, [
+      'function getTaskBidders(uint256) view returns (address[])',
+      'function bids(uint256,address) view returns (uint256 taskId, address bidder, uint256 bidAmount, string proposal, string contactInfo, uint256 bidTime, bool isSelected, bool isLost)'
+    ], p);
+    const bidders = await biddingC.getTaskBidders(BigInt(taskId));
+    if (bidders.length === 0) { console.log(JSON.stringify([])); return; }
+    const result = [];
+    for (const bidder of bidders) {
+      try {
+        const b = await biddingC.bids(BigInt(taskId), bidder);
+        result.push({
+          bidder: b.bidder,
+          bidAmount: ethers.formatEther(b.bidAmount),
+          proposal: b.proposal,
+          contactInfo: b.contactInfo,
+          bidTime: new Date(Number(b.bidTime)*1000).toISOString(),
+          isSelected: b.isSelected,
+          isLost: b.isLost
+        });
+      } catch(e) { result.push({bidder, error: e.message.slice(0,60)}); }
+      await new Promise(r=>setTimeout(r,300));
+    }
+    console.log(JSON.stringify(result, null, 2));
+  },
+
   async stake(amount) {
     // stake <amount> — deposit NIUMA to UserProfileCredit
     const signer = await cmds._signer();
@@ -714,11 +767,14 @@ READ (no credentials needed):
 WRITE (requires NIUMA_WALLET_SECRET env var):
   approve <tokenAddr> <spender> <amount>   Approve ERC20 (auto-skips if enough)
   create '<json>'                          Create task (auto-approves if needed)
-  participate <taskId>                     Join a task
+  participate <taskId>                     Join a task (Normal tasks)
   submit <taskId> <proofHash> [metadata]   Submit work proof
   approve-submission <taskId> <address>    Approve hunter submission (creator only)
   reject-submission <taskId> <addr> <reason>  Reject hunter submission (creator only)
   create-dispute <taskId> <reason> [evidenceHash]  Dispute a rejection
+  submit-bid <taskId> <amount> <proposal> <contact>  Submit bid (Bidding tasks)
+  cancel-bid <taskId>                      Cancel your bid
+  select-bidder <taskId> <address>         Select winning bidder (creator only)
   stake <amount>                           Deposit NIUMA to UserProfileCredit
   unstake <amount>                         Withdraw unlocked NIUMA
 
