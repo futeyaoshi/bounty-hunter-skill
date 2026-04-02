@@ -15,11 +15,11 @@
     "helper": "0xcc22708236583f0D304c81fa626eD976294c5A89",
     "priceOracle": "0x4C4D550Fd8b82A02e1B9d63effc97895099004f7",
     "queryHelper": "0xE7D9d979Ebf376AaD774768Ae88FFE72863B2117",
-    "niumaToken": "0x77F2A7eF998b7814b1739F7Cc8158F81d5c11b59"
+    "niumaToken": "0xAd9e1aC142Bb3C706C42A5Bc4ECeeb9364fD0939"
   },
   "tokens": {
     "NIUMA": {
-      "address": "0x77F2A7eF998b7814b1739F7Cc8158F81d5c11b59",
+      "address": "0xAd9e1aC142Bb3C706C42A5Bc4ECeeb9364fD0939",
       "decimals": 18,
       "symbol": "NIUMA"
     },
